@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { useForge } from "@/lib/landing/store"
+import { useUi, type DialogId } from "@/lib/landing/uiStore"
 import { configToYaml, yamlToConfig } from "@/lib/landing/yaml"
 
 const EXAMPLE_PROMPTS = [
@@ -24,7 +25,18 @@ const EXAMPLE_PROMPTS = [
   "Launch page for an indie smart-water-bottle. Playful, emerald theme, gallery, testimonials, waitlist CTA.",
 ]
 
-export function ExportYamlDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+/** Derive dialog open state + close callback from the shared UI store. */
+function useUiDialog(id: Exclude<DialogId, null>) {
+  const open = useUi((s) => s.dialog === id)
+  const closeDialog = useUi((s) => s.closeDialog)
+  return {
+    open,
+    onOpenChange: React.useCallback((v: boolean) => { if (!v) closeDialog() }, [closeDialog]),
+  }
+}
+
+export function ExportYamlDialog() {
+  const { open, onOpenChange } = useUiDialog("export-yaml")
   const config = useForge((s) => s.config)
   const brand = useForge((s) => s.project.name)
   const [copied, setCopied] = React.useState(false)
@@ -77,7 +89,8 @@ export function ExportYamlDialog({ open, onOpenChange }: { open: boolean; onOpen
   )
 }
 
-export function ImportYamlDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function ImportYamlDialog() {
+  const { open, onOpenChange } = useUiDialog("import-yaml")
   const setConfig = useForge((s) => s.setConfig)
   const [text, setText] = React.useState("")
   const [fileError, setFileError] = React.useState("")
@@ -132,7 +145,8 @@ export function ImportYamlDialog({ open, onOpenChange }: { open: boolean; onOpen
   )
 }
 
-export function AiGenerateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function AiGenerateDialog() {
+  const { open, onOpenChange } = useUiDialog("ai-generate")
   const setConfig = useForge((s) => s.setConfig)
   const [prompt, setPrompt] = React.useState("")
   const [loading, setLoading] = React.useState(false)
@@ -232,7 +246,8 @@ export function AiGenerateDialog({ open, onOpenChange }: { open: boolean; onOpen
   )
 }
 
-export function AiImproveDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function AiImproveDialog() {
+  const { open, onOpenChange } = useUiDialog("ai-improve")
   const config = useForge((s) => s.config)
   const setConfig = useForge((s) => s.setConfig)
   const [instruction, setInstruction] = React.useState("")

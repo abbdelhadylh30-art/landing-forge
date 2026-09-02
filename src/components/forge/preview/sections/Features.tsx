@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import type { FeatureItem, FeaturesSection } from "@/lib/landing/types"
 
@@ -64,6 +65,132 @@ function FeatureCard({ item, big = false, chart = false, className }: FeatureCar
   )
 }
 
+/**
+ * Horizontal scroll-snap carousel of feature cards with ghost arrows
+ * and an index/total dot hint (pattern borrowed from Gallery).
+ */
+function FeatureCarousel({ items }: { items: FeatureItem[] }) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState(0)
+  const activeIdx = Math.min(active, Math.max(items.length - 1, 0))
+
+  const scrollBy = (dir: 1 | -1) => {
+    const el = trackRef.current
+    if (!el) return
+    el.scrollBy({ left: dir * el.clientWidth * 0.7, behavior: "smooth" })
+  }
+
+  const scrollToIndex = (i: number) => {
+    const el = trackRef.current
+    const child = el?.children[i]
+    if (!el || !child) return
+    const elRect = el.getBoundingClientRect()
+    const childRect = child.getBoundingClientRect()
+    el.scrollTo({
+      left: el.scrollLeft + childRect.left - elRect.left - (elRect.width - childRect.width) / 2,
+      behavior: "smooth",
+    })
+  }
+
+  /** Snap-start alignment: the active card is the one whose start edge is nearest the track's start edge. */
+  const handleScroll = () => {
+    const el = trackRef.current
+    if (!el || el.children.length === 0) return
+    const edge = el.getBoundingClientRect().left
+    let best = 0
+    let bestDist = Number.POSITIVE_INFINITY
+    for (let i = 0; i < el.children.length; i++) {
+      const rect = (el.children[i] as HTMLElement).getBoundingClientRect()
+      const dist = Math.abs(rect.left - edge)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = i
+      }
+    }
+    setActive(best)
+  }
+
+  if (items.length === 0) return null
+
+  return (
+    <div>
+      <div className="relative">
+        <div
+          ref={trackRef}
+          onScroll={handleScroll}
+          className="flex snap-x snap-mandatory gap-4 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {items.map((item, i) => (
+            <article
+              key={`${item.title}-${i}`}
+              className="flex w-72 shrink-0 snap-start flex-col border p-5 transition-colors duration-200 [border-color:var(--lf-border)] hover:[border-color:var(--lf-accent)] md:w-80"
+              style={{ background: "rgba(255,255,255,0.03)", borderRadius: "var(--lf-radius, 12px)" }}
+            >
+              <div
+                className="flex size-10 items-center justify-center rounded-xl text-xl"
+                style={{ background: "var(--lf-accent-soft)" }}
+              >
+                <span aria-hidden>{item.icon}</span>
+              </div>
+              <h3 className="mt-4 text-base font-semibold" style={{ color: "var(--lf-text)" }}>
+                {item.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--lf-muted)" }}>
+                {item.body}
+              </p>
+            </article>
+          ))}
+        </div>
+        {items.length > 1 ? (
+          <>
+            <button
+              type="button"
+              aria-label="Previous feature"
+              onClick={() => scrollBy(-1)}
+              className="absolute left-1 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border shadow-lg transition-colors [border-color:var(--lf-border)] hover:[border-color:var(--lf-accent)]"
+              style={{ background: "var(--lf-bg)", color: "var(--lf-text)" }}
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next feature"
+              onClick={() => scrollBy(1)}
+              className="absolute right-1 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border shadow-lg transition-colors [border-color:var(--lf-border)] hover:[border-color:var(--lf-accent)]"
+              style={{ background: "var(--lf-bg)", color: "var(--lf-text)" }}
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </>
+        ) : null}
+      </div>
+      {items.length > 1 ? (
+        <div className="mt-5 flex items-center justify-center gap-3">
+          <div className="flex items-center gap-1.5">
+            {items.map((_, i) => (
+              <button
+                key={`dot-${i}`}
+                type="button"
+                aria-label={`Go to feature ${i + 1}`}
+                aria-current={i === activeIdx}
+                onClick={() => scrollToIndex(i)}
+                className="h-1.5 cursor-pointer rounded-full transition-all duration-200"
+                style={{
+                  width: i === activeIdx ? 20 : 6,
+                  background: i === activeIdx ? "var(--lf-accent)" : "var(--lf-border)",
+                }}
+              />
+            ))}
+          </div>
+          <span className="text-xs font-medium tabular-nums" style={{ color: "var(--lf-muted)" }}>
+            {activeIdx + 1}/{items.length}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function Features({ section }: FeaturesProps) {
   const items = section.items ?? []
   const [active, setActive] = useState(0)
@@ -123,6 +250,8 @@ export function Features({ section }: FeaturesProps) {
               />
             ))}
           </div>
+        ) : section.style === "carousel" ? (
+          <FeatureCarousel items={items} />
         ) : items.length > 0 && current ? (
           <div>
             {/* tab bar */}

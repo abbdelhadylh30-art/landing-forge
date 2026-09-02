@@ -57,6 +57,18 @@ export function DevicePreview({ className }: { className?: string }) {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [device, previewMode])
 
+  // Esc exits full-screen preview mode
+  React.useEffect(() => {
+    if (!previewMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        useForge.getState().setPreviewMode(false)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [previewMode])
+
   const handleCtaClick = (section: Section, label: string) => {
     if (!projectId) return
     track(projectId, { type: "cta_click", label: `${section.type}: ${label}`, variant: heroAb?.enabled && abVariant ? abVariant : undefined })
@@ -139,7 +151,7 @@ export function DevicePreview({ className }: { className?: string }) {
 
       {/* Canvas */}
       {previewMode ? (
-        <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950 [scrollbar-width:thin]">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950 lf-scroll">
           <div
             className="mx-auto min-h-full transition-all duration-300"
             style={width ? { width, maxWidth: "100%" } : { width: "100%" }}
@@ -151,7 +163,7 @@ export function DevicePreview({ className }: { className?: string }) {
         <div className="flex min-h-0 flex-1 items-stretch justify-center overflow-hidden bg-[radial-gradient(ellipse_at_top,rgba(167,139,250,0.06),transparent_60%)] p-3">
           <div
             ref={scrollRef}
-            className="relative min-h-0 w-full overflow-y-auto rounded-xl border border-zinc-800 shadow-2xl shadow-black/40 [scrollbar-width:thin]"
+            className="relative min-h-0 w-full overflow-y-auto rounded-xl border border-zinc-800 shadow-2xl shadow-black/40 lf-scroll"
             style={width ? { width, maxWidth: "100%", margin: "0 auto" } : undefined}
           >
             <LandingPreview

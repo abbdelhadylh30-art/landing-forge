@@ -37,7 +37,7 @@ import type {
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{label}</Label>
+      <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</Label>
       {children}
       {hint && <p className="text-[10px] leading-tight text-zinc-500">{hint}</p>}
     </div>
@@ -169,7 +169,7 @@ function CtaFields({
   return (
     <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Button</span>
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Button</span>
         {onRemove && (
           <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-rose-300 hover:bg-rose-500/10" onClick={onRemove}>
             {removeLabel ?? "Remove"}
@@ -231,7 +231,7 @@ function ListEditor<T>({
   }
   return (
     <div className="space-y-2">
-      {label && <Label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{label} ({items.length})</Label>}
+      {label && <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label} ({items.length})</Label>}
       {items.map((item, i) => (
         <div key={i} className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/40">
           <div className="flex items-center gap-1 px-2 py-1.5">
@@ -288,7 +288,7 @@ function StringListEditor({ label, items, onChange, createValue, addLabel, max =
   }
   return (
     <div className="space-y-2">
-      {label && <Label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{label} ({items.length})</Label>}
+      {label && <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label} ({items.length})</Label>}
       {items.map((item, i) => (
         <div key={i} className="flex items-center gap-1">
           <Input
@@ -425,7 +425,7 @@ function HeroEditor({ section, update }: EditorProps<HeroSection>) {
           <>
             <div className="flex gap-2">
               <div className="flex-1">
-                <Label className="text-[10px] uppercase tracking-wider text-zinc-500">Sample size</Label>
+                <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Sample size</Label>
                 <Input
                   type="number"
                   min={50}
@@ -436,7 +436,7 @@ function HeroEditor({ section, update }: EditorProps<HeroSection>) {
                 />
               </div>
               <div className="flex-1">
-                <Label className="text-[10px] uppercase tracking-wider text-zinc-500">Metric</Label>
+                <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Metric</Label>
                 <div className="flex h-8 items-center rounded-md border border-zinc-700/80 bg-zinc-900/60 px-2 font-mono text-[11px] text-violet-300">{ab.metric}</div>
               </div>
             </div>
@@ -521,6 +521,7 @@ function FeaturesEditor({ section, update }: EditorProps<FeaturesSection>) {
           { value: "alternating", label: "Alternating rows" },
           { value: "bento", label: "Bento" },
           { value: "tabs", label: "Tabs (interactive)" },
+          { value: "carousel", label: "Carousel" },
         ]}
       />
       {section.style === "grid" && (
@@ -595,6 +596,8 @@ function TestimonialsEditor({ section, update }: EditorProps<TestimonialsSection
           { value: "grid", label: "Grid" },
           { value: "marquee", label: "Marquee (scrolling)" },
           { value: "spotlight", label: "Spotlight" },
+          { value: "video", label: "Video cards" },
+          { value: "logo-wall", label: "Logo wall" },
         ]}
       />
       <ListEditor
@@ -613,7 +616,7 @@ function TestimonialsEditor({ section, update }: EditorProps<TestimonialsSection
             </div>
             <div className="flex items-center gap-3">
               <div className="flex-1">
-                <Label className="text-[10px] uppercase tracking-wider text-zinc-500">Rating</Label>
+                <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Rating</Label>
                 <Slider
                   value={[t.rating ?? 5]}
                   min={1}
@@ -884,7 +887,7 @@ function PageSettings() {
       <TextField label="SEO title" value={config.seo.title} onChange={(title) => updateSeo({ title })} maxLength={70} hint={`${config.seo.title.length}/70 — shown in search results & link previews`} />
       <TextAreaField label="SEO description" value={config.seo.description} onChange={(description) => updateSeo({ description })} rows={3} maxLength={160} hint={`${config.seo.description.length}/160`} />
       <div className="space-y-2">
-        <Label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">One-click theme</Label>
+        <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">One-click theme</Label>
         <div className="grid grid-cols-2 gap-2">
           {THEMES.map((t) => (
             <button
@@ -925,23 +928,23 @@ export function PropertiesPanel({ className }: { className?: string }) {
   const selected = sections.find((s) => s.id === selectedId) ?? null
 
   return (
-    <div className={cn("flex min-h-0 flex-col bg-zinc-950", className)}>
+    <div className={cn("lf-fade-up flex min-h-0 flex-col bg-zinc-950", className)}>
       <Tabs defaultValue="section" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mx-3 mt-3 grid h-8 grid-cols-2 bg-zinc-900">
           <TabsTrigger value="section" className="text-[11px] data-[state=active]:bg-violet-500/20 data-[state=active]:text-violet-200">Section</TabsTrigger>
           <TabsTrigger value="page" className="text-[11px] data-[state=active]:bg-violet-500/20 data-[state=active]:text-violet-200">Page & theme</TabsTrigger>
         </TabsList>
-        <TabsContent value="page" className="min-h-0 flex-1 overflow-y-auto p-3 [scrollbar-width:thin]">
+        <TabsContent value="page" className="lf-scroll min-h-0 flex-1 overflow-y-auto p-3">
           <PageSettings />
         </TabsContent>
-        <TabsContent value="section" className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+        <TabsContent value="section" className="lf-scroll min-h-0 flex-1 overflow-y-auto">
           {!selected ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+            <div className="lf-fade-in flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
               <GripVertical className="h-6 w-6 text-zinc-700" />
               <p className="text-[12px] text-zinc-500">Select a section on the left or click it in the preview to edit its properties.</p>
             </div>
           ) : (
-            <div className="space-y-4 p-3">
+            <div key={selectedId} className="lf-fade-in space-y-4 p-3">
               <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-2.5">
                 <span className="text-lg leading-none">{SECTION_META[selected.type].icon}</span>
                 <div className="min-w-0 flex-1">

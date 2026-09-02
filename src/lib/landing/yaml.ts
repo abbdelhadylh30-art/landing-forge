@@ -34,7 +34,7 @@ export function normalizeConfig(input: unknown): LandingConfig {
       merged.cta = validCta(rs.cta) ?? (fresh as { cta: { label: string; href: string } }).cta
     }
     if (type === "features") {
-      merged.style = ["grid", "alternating", "bento", "tabs"].includes(rs.style as string) ? rs.style : "grid"
+      merged.style = ["grid", "alternating", "bento", "tabs", "carousel"].includes(rs.style as string) ? rs.style : "grid"
       merged.items = validItems(rs.items, 3, (x) => ({
         icon: String((x as Record<string, unknown>).icon ?? "⚡"),
         title: String((x as Record<string, unknown>).title ?? "Feature"),
@@ -42,7 +42,7 @@ export function normalizeConfig(input: unknown): LandingConfig {
       }))
     }
     if (type === "testimonials") {
-      merged.style = ["grid", "marquee", "spotlight"].includes(rs.style as string) ? rs.style : "grid"
+      merged.style = ["grid", "marquee", "spotlight", "video", "logo-wall"].includes(rs.style as string) ? rs.style : "grid"
       merged.items = validItems(rs.items, 3, (x) => {
         const o = x as Record<string, unknown>
         return {

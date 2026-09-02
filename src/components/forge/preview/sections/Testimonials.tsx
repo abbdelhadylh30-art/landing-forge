@@ -1,6 +1,7 @@
 "use client"
 
-import { Star } from "lucide-react"
+import { useState } from "react"
+import { Pause, Play, Star } from "lucide-react"
 
 import type { TestimonialItem, TestimonialsSection } from "@/lib/landing/types"
 
@@ -72,6 +73,181 @@ function TestimonialCard({ item, compact = false, className }: TestimonialCardPr
         </span>
       </figcaption>
     </figure>
+  )
+}
+
+/** Deterministic faux-video duration label per index, e.g. "2:14". */
+function durationOf(index: number): string {
+  const secs = 134 + ((index * 47) % 120)
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`
+}
+
+/** Stable hue derived from the item index (same trick as the Gallery art). */
+function hueOf(index: number): number {
+  return (index * 61) % 360
+}
+
+interface VideoCardProps {
+  item: TestimonialItem
+  index: number
+}
+
+/** Video testimonial card: 16:9 generated thumb with a faux inline playback state. */
+function VideoCard({ item, index }: VideoCardProps) {
+  const [playing, setPlaying] = useState(false)
+  const initials = item.initials?.trim() || initialsOf(item.author)
+  const hue = hueOf(index)
+  const gradient = `linear-gradient(135deg, hsl(${hue} 70% 45%), hsl(${(hue + 40) % 360} 90% 62%))`
+
+  return (
+    <figure
+      className="flex h-full flex-col overflow-hidden rounded-2xl border transition-colors duration-200"
+      style={{
+        background: "var(--lf-surface)",
+        borderColor: playing ? "var(--lf-accent)" : "var(--lf-border)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setPlaying((p) => !p)}
+        aria-pressed={playing}
+        aria-label={
+          playing ? `Pause video testimonial from ${item.author}` : `Play video testimonial from ${item.author}`
+        }
+        className="group relative block w-full cursor-pointer overflow-hidden text-left"
+        style={{ aspectRatio: "16 / 9" }}
+      >
+        {/* generated backdrop */}
+        <span aria-hidden className="absolute inset-0" style={{ background: gradient }} />
+        <span
+          aria-hidden
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "radial-gradient(rgba(255,255,255,0.22) 1px, transparent 1.4px)",
+            backgroundSize: "16px 16px",
+            opacity: 0.45,
+          }}
+        />
+        {playing ? (
+          <>
+            {/* faux playing panel */}
+            <span aria-hidden className="absolute inset-0" style={{ background: "rgba(0,0,0,0.45)" }} />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span
+                className="flex size-12 items-center justify-center rounded-full border backdrop-blur-md transition-transform duration-150 group-hover:scale-105"
+                style={{
+                  background: "rgba(255,255,255,0.16)",
+                  borderColor: "rgba(255,255,255,0.35)",
+                  color: "rgba(255,255,255,0.95)",
+                }}
+              >
+                <Pause className="size-5" fill="currentColor" strokeWidth={1.5} />
+              </span>
+            </span>
+            <span
+              aria-hidden
+              className="absolute inset-x-0 bottom-0 block h-1"
+              style={{ background: "rgba(255,255,255,0.18)" }}
+            >
+              <span className="lf-progress-bar block h-full" style={{ background: "var(--lf-accent)" }} />
+            </span>
+          </>
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center">
+            <span
+              className="flex size-12 items-center justify-center rounded-full border backdrop-blur-md transition-transform duration-200 group-hover:scale-110"
+              style={{
+                background: "rgba(255,255,255,0.16)",
+                borderColor: "rgba(255,255,255,0.35)",
+                color: "rgba(255,255,255,0.95)",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+              }}
+            >
+              <Play className="size-5 translate-x-0.5" fill="currentColor" strokeWidth={1.5} />
+            </span>
+          </span>
+        )}
+        <span
+          className="absolute bottom-2.5 right-2 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
+          style={{ background: "rgba(0,0,0,0.6)", color: "rgba(255,255,255,0.92)" }}
+        >
+          {durationOf(index)}
+        </span>
+      </button>
+      <div className="flex flex-1 flex-col p-5">
+        <blockquote
+          className={cn("line-clamp-3 text-sm leading-relaxed md:text-[15px]", playing && "font-medium")}
+          style={{ color: playing ? "var(--lf-text)" : "var(--lf-muted)" }}
+        >
+          {item.quote}
+        </blockquote>
+        <figcaption className="mt-auto flex items-center gap-3 pt-4">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+            style={{ background: "var(--lf-accent-soft)", color: "var(--lf-accent)" }}
+          >
+            {initials}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold" style={{ color: "var(--lf-text)" }}>
+              {item.author}
+            </span>
+            <span className="block truncate text-xs" style={{ color: "var(--lf-muted)" }}>
+              {item.role}
+            </span>
+          </span>
+        </figcaption>
+      </div>
+    </figure>
+  )
+}
+
+/** "video" style: grid of faux video testimonial cards. */
+function VideoTestimonials({ items }: { items: TestimonialItem[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 md:gap-5">
+      {items.map((item, i) => (
+        <VideoCard key={`${item.author}-${i}`} item={item} index={i} />
+      ))}
+    </div>
+  )
+}
+
+/** "logo-wall" style: compact monogram tiles for companies/people. */
+function LogoWall({ items }: { items: TestimonialItem[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-5">
+      {items.map((item, i) => {
+        const initials = item.initials?.trim() || initialsOf(item.author)
+        return (
+          <div
+            key={`${item.author}-${i}`}
+            className="flex flex-col items-center rounded-2xl border p-6 text-center transition duration-200 [border-color:var(--lf-border)] hover:-translate-y-1 hover:[border-color:var(--lf-accent)]"
+            style={{ background: "var(--lf-surface)" }}
+          >
+            <span
+              className="flex size-14 items-center justify-center rounded-xl border text-lg font-extrabold tracking-wider md:size-16 md:text-xl"
+              style={{ background: "var(--lf-accent-soft)", borderColor: "var(--lf-border)", color: "var(--lf-accent)" }}
+            >
+              {initials}
+            </span>
+            <span className="mt-4 text-sm font-semibold" style={{ color: "var(--lf-text)" }}>
+              {item.author}
+            </span>
+            <span className="mt-1 text-xs" style={{ color: "var(--lf-muted)" }}>
+              {item.role}
+            </span>
+            {typeof item.rating === "number" ? (
+              <span className="mt-3">
+                <Stars rating={item.rating} />
+              </span>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -163,6 +339,10 @@ export function Testimonials({ section }: TestimonialsProps) {
                 <TestimonialCard key={i} item={t} />
               ))}
             </div>
+          ) : section.style === "video" ? (
+            <VideoTestimonials items={items} />
+          ) : section.style === "logo-wall" ? (
+            <LogoWall items={items} />
           ) : (
             <Spotlight items={items} />
           )}

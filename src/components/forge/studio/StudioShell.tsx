@@ -11,7 +11,7 @@ import { useForge } from "@/lib/landing/store"
 
 type MobilePane = "sections" | "preview" | "properties"
 
-export function StudioShell({ onNavigateToProjects }: { onNavigateToProjects: () => void }) {
+export function StudioShell() {
   const [mobilePane, setMobilePane] = React.useState<MobilePane>("preview")
   const previewMode = useForge((s) => s.previewMode)
 
@@ -28,7 +28,7 @@ export function StudioShell({ onNavigateToProjects }: { onNavigateToProjects: ()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Toolbar onNavigateToProjects={onNavigateToProjects} />
+      <Toolbar />
 
       {/* Mobile pane switcher */}
       <div className="flex gap-1 border-b border-zinc-800/80 bg-zinc-950 px-3 py-1.5 lg:hidden" role="tablist" aria-label="Studio panes">

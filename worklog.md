@@ -158,3 +158,104 @@ Work Log:
 Stage Summary:
 - All buttons/actions verified working end-to-end. Dev server clean (no runtime errors in dev.log). Two demo projects: Bean Route (ember, A/B on, seeded) + Vertex (nebula, 11 sections incl. gallery, seeded).
 - Remaining known minor items: funnel "Engaged with sections" can exceed pageviews (counts section_view events per view — by design); simulated deploy URL is illustrative (no real hosting).
+
+---
+Task ID: R6-a
+Agent: frontend-styling-expert
+Task: 3 new preview layout variants — Features `carousel`, Testimonials `video` + `logo-wall`
+
+Work Log:
+- Read worklog.md (esp. Task 2-b renderer architecture), both target section files completely, shared.tsx, themes.ts, Gallery.tsx (carousel pattern), LandingPreview.tsx (selection overlay/pointer-events-none), types.ts style unions, globals.css.
+- Features.tsx — added `FeatureCarousel` component + `section.style === "carousel"` branch (inserted between "bento" and the tabs fallback; all existing branches untouched):
+  - Horizontal scroll-snap track (snap-x snap-mandatory, gap-4, hidden scrollbar via scrollbar-width/::-webkit-scrollbar utilities, same as Gallery) of cards `w-72 md:w-80 shrink-0 snap-start`, each with icon box (var(--lf-accent-soft)), title, body.
+  - Card style per spec: background rgba(255,255,255,0.03), 1px border, borderRadius var(--lf-radius, 12px) (fallback needed — themes.ts does NOT define --lf-radius), hover border accent.
+  - Prev/next round ghost buttons (size-9, top-1/2, ChevronLeft/ChevronRight, scrollBy ±0.7×clientWidth smooth) copied from Gallery.tsx; hidden when items.length <= 1.
+  - Progress hint below: clickable dot row (active dot = 20px pill var(--lf-accent), inactive 6px var(--lf-border)) + "N/M" tabular-nums muted label. Active index computed in an onScroll handler — nearest card start-edge to the track's left edge (matches snap-start semantics; getBoundingClientRect-based, no layout assumptions). Dots scroll to their card via rect-math scrollTo centering. Index clamped against stale state when items shrink.
+  - Hover borders implemented with arbitrary property classes `[border-color:var(--lf-border)] hover:[border-color:var(--lf-accent)]` so the hover actually wins cascade over the base (inline-style borderColor would beat hover classes — avoided on purpose).
+- Testimonials.tsx — added `video` and `logo-wall` branches to the style chain (grid/marquee/spotlight untouched), plus helpers:
+  - `durationOf(index)` deterministic "M:SS" chips (i=0 → "2:14"), `hueOf(index)` = (index*61)%360 (Gallery trick).
+  - `VideoCard`: 16:9 thumb button (aria-pressed, cursor-pointer) with hsl(hue) generated gradient + Gallery-style dot pattern overlay + centered glassy round play control (rgba(255,255,255,0.16) bg, backdrop-blur, Play filled, translate-x-0.5 optical centering, group-hover:scale-110) + duration chip (rgba(0,0,0,0.6) bg, white text). Click toggles `playing`: swaps to faux video panel — dark rgba(0,0,0,0.45) overlay, Pause glass control, animated progress bar (`.lf-progress-bar`, 12s linear forwards) — and highlights the card (accent border + quote goes muted→text + font-medium) while playing. Below thumb: line-clamp-3 quote + initials avatar + author/role row (existing TestimonialCard idiom). Cards use var(--lf-surface) bg, rounded-2xl, flush-edge thumb via overflow-hidden.
+  - `VideoTestimonials`: grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 wrapper.
+  - `LogoWall`: grid-cols-2 md:grid-cols-4 tiles — big monogram square (size-14/16, border, var(--lf-accent-soft) bg, var(--lf-accent) extrabold initials, falls back to initialsOf(author)), author name, tiny role, Stars row only when `typeof rating === "number"`; hover: border accent + -translate-y-1 via arbitrary border-color classes + transition. Section title/subtitle still rendered by the shared SectionHeader.
+- globals.css — appended ONLY at end (after .lf-marquee-track:hover): `@keyframes lf-progress` (width 0%→100%) + `.lf-progress-bar { animation: lf-progress 12s linear forwards }`. Keyframe was NOT present anywhere (grep-verified) — appended because the video playing state needs it.
+- Exports/props unchanged: `Features({ section })`, `Testimonials({ section })`; sections/index.ts re-exports still valid without edits. No `any`; fully typed from @/lib/landing/types; "use client" retained.
+- Verification: `bunx eslint` on both files → clean (zero errors). `bunx tsc --noEmit` → zero errors in both files + entire forge/preview tree (only 4 pre-existing errors remain, all in examples/ + skills/, out of scope). Temporary renderToString smoke test (created then deleted, 2-b precedent): 11/11 PASS — carousel (incl. empty/single-item), video (incl. empty), logo-wall (incl. empty), plus regression renders of features grid/tabs and testimonials grid/spotlight.
+- Zero hardcoded theme colors: only var(--lf-*), rgba(255,255,255,x)/rgba(0,0,0,x) glass, white/black alpha, and Gallery-precedent hsl(index-hue) generated thumb art.
+
+Stage Summary:
+- Files touched (3): src/components/forge/preview/sections/Features.tsx (+FeatureCarousel + carousel branch), src/components/forge/preview/sections/Testimonials.tsx (+VideoCard/VideoTestimonials/LogoWall/durationOf/hueOf + video & logo-wall branches), src/app/globals.css (append-only: lf-progress keyframes + .lf-progress-bar rule).
+- Types were already extended (features "carousel" line 76, testimonials "video" | "logo-wall" line 109) — no type changes made.
+- Note for orchestrator: studio PropertiesPanel style dropdowns (Task 3) don't yet offer the 3 new style values to editors — adding them to the pickers is a PropertiesPanel-side change, intentionally untouched here per file scope. Everything renders fine when style is set programmatically/YAML/AI.
+
+---
+Task ID: R6-b
+Agent: frontend-styling-expert
+Task: Styling polish — SectionsPanel, PropertiesPanel, DashboardView, ProjectsView (apply the new lf-* utility classes; visual-only, zero logic changes)
+
+Work Log:
+- Read worklog.md (Tasks 1–5, R6-a), globals.css (verified lf-scroll / lf-fade-up / lf-fade-up-stagger / lf-fade-in / lf-focus / lf-glow all present — NOT re-added), all 4 target files completely, plus button.tsx (base has transition-all), Toolbar.tsx deploy button (gradient idiom), StudioShell.tsx (panels get width/flex classes only, no transforms), @dnd-kit/core+modifiers source, package.json (Tailwind v4 confirmed).
+- CRITICAL engineering note (drove the SectionsPanel design): a CSS animation with `animation-fill-mode: both` keeps its keyframe values at animation-cascade priority, which OVERRIDES normal declarations INCLUDING inline styles — so animating dnd-kit's sortable node would permanently lock `transform: translateY(0)` and the row would not follow the cursor while dragging. Also verified in @dnd-kit/core dist: `containerNodeRect = useRect(activeNode ? activeNode.parentElement : null)` — i.e. restrictToParentElement's drag boundary is the row's parentElement. Therefore per-row wrappers around rows were rejected (they would shrink the drag boundary to one row height) AND animating the row node directly was rejected (transform lock). Solution: the sortable row node itself becomes an `lf-fade-up-stagger` container whose single child (a new inner content div holding the select button + icon buttons) is the animation target with the inline delay. dnd transform (outer div) and drag boundary (outer div's parent = the list) are both untouched — drag stays fully functional.
+- SectionsPanel.tsx:
+  - Scroll container: `[scrollbar-width:thin]` → `lf-scroll` (violet slim scrollbar incl. webkit).
+  - Per-row staggered entrance: outer row div gets `lf-fade-up-stagger`, new inner content div `flex items-center gap-1.5` + `style={{ animationDelay: `${Math.min(index * 30, 400)}ms` }}` (index prop already passed; cap 400ms per spec).
+  - Row hover micro-interaction: unselected rows `hover:border-zinc-700` → `hover:border-violet-500/30 hover:bg-zinc-900/60` (bg base is already zinc-900/40, so /40 would be a no-op; /60 gives the requested subtle shift).
+  - Active drag state: `ring-1 ring-violet-500/50` → `ring-2 ring-violet-500/60` (shadow/z-50 kept).
+  - Icon buttons: hide/duplicate get `transition-colors` (hover:text-zinc-200 already present); delete gets `border border-transparent transition-colors hover:border-rose-500/40 hover:text-rose-300` (transparent resting border so the rose ring only shows on hover; box-sizing means no size shift).
+  - Header: `Sections (N)` → uppercase label + violet count pill (`rounded-full border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300`, singular/plural aware); "drag to reorder" hint kept.
+  - All aria-labels/roles/handlers untouched; code comment documents WHY the animation targets row content, not the sortable node.
+- PropertiesPanel.tsx:
+  - Both TabsContent scroll containers: `[scrollbar-width:thin]` → `lf-scroll`.
+  - Panel root gets `lf-fade-up` (one-shot entrance; root never carries transforms — StudioShell only passes width/flex classes).
+  - Selection cross-fade: editor content wrapper `<div className="space-y-4 p-3">` → `<div key={selectedId} className="lf-fade-in space-y-4 p-3">` (re-mounts on section change → 0.25s fade); empty-state placeholder div also gets `lf-fade-in`.
+  - Field labels standardized to `text-[10px] font-semibold uppercase tracking-wider text-zinc-500` (the Field primitive already had this; aligned the stragglers): Field(11px/400), CtaFields "Button"(11px/400), ListEditor label(11px/400), StringListEditor label(11px/400), "One-click theme"(11px/400), plus added missing `font-semibold` to A/B "Sample size"/"Metric" and "Rating" labels (were 10px/500 non-bold).
+  - Inputs/selects left alone (shadcn rings) per instructions; SECTION_META emoji icon next to the type label was already present (verified, not re-added).
+- DashboardView.tsx:
+  - Root scroll container: `[scrollbar-width:thin]` → `lf-scroll`.
+  - StatCard: `transition-colors hover:border-zinc-700` → `transition-all hover:-translate-y-0.5 hover:border-violet-500/30 hover:bg-zinc-900/70` (base bg-zinc-900/40 kept).
+  - Stat grid gets `lf-fade-up-stagger`; each of the 6 literal StatCards wrapped in a plain `<div style={{ animationDelay: "0/60/120/180/240/300ms" }}>` (i*60ms). Wrappers (not the cards) are the animated elements so hover lifts can never collide with the animation fill — zero prop changes to StatCard.
+  - Panel sections staggered: traffic chart wrapped `lf-fade-up` @340ms; devices/visitor-map/referrers grid `lf-fade-up-stagger` with wrappers @380/440/500ms; funnel/A/B grid `lf-fade-up-stagger` with wrappers @560/620ms; recent events wrapped `lf-fade-up` @680ms. All charts/controls/logic untouched — wrappers only re-indent JSX.
+  - Promote button (A/B panel primary action): `bg-violet-500 … hover:bg-violet-600` → `bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 lf-glow` (matches Toolbar deploy-button idiom; no shadow classes added since lf-glow animates box-shadow).
+- ProjectsView.tsx:
+  - Root scroll container: `[scrollbar-width:thin]` → `lf-scroll`.
+  - Project grid gets `lf-fade-up-stagger`; each card wrapped in `<div key={p.id} style={{ animationDelay: `${Math.min(i * 70, 560)}ms` }}>` (i*70ms capped at 560ms). Card hover lift upgraded to `transition-all duration-300 hover:-translate-y-1 hover:border-violet-500/40 hover:shadow-xl hover:shadow-violet-500/10` (was -translate-y-0.5 / shadow-lg /10%… shadow-violet-500/5).
+  - Template cards (create dialog): base class + `hover:scale-[1.02]`, unselected branch + `hover:bg-zinc-900/60` (border accent hover:border-violet-500/50 already existed; selected branch untouched so violet bg isn't clobbered on hover).
+- Verification: `bunx eslint` on the 4 files → exit 0, zero errors/warnings. `bunx tsc --noEmit` → only the 4 pre-existing errors in examples/ + skills/ (irrelevant per task); zero errors in the 4 edited files and the entire src/ tree. No `any`, no new deps, no files other than the 4 targets touched (globals.css NOT modified — classes consumed as provided). Remaining `[scrollbar-width:thin]` occurrences live in DevicePreview/DeployDialog (out of my scope, left for orchestrator).
+- Did NOT run build/dev servers, did NOT create test files. Framer-motion intentionally unused (CSS classes cover everything requested).
+
+Stage Summary:
+- All 4 views polished with the lf-* utility classes: lf-scroll on every scroll container (5 total), staggered lf-fade-up entrances (rows @30ms, stat cards @60ms, project cards @70ms, dashboard panels @340–680ms), lf-fade-in selection cross-fade in the properties panel, gradient+lf-glow on the Promote-winner CTA, violet/rose hover micro-interactions throughout, header count pill in SectionsPanel.
+- Key constraint honored: dnd-kit drag in SectionsPanel is provably unaffected (animation never touches the sortable node's transform and the restrictToParentElement boundary is unchanged) — this is why the stagger is applied to row CONTENT via lf-fade-up-stagger on the row rather than on the sections list.
+- Note for orchestrator: Section row hover uses bg-zinc-900/60 (spec example /40 equals the resting bg, so a visible shift needed /60); project-card stagger is capped at 560ms; list-editor expansion state now resets on section switch (inherent to the requested keyed remount, arguably better UX).
+
+---
+Task ID: R6
+Agent: main (Z.ai Code) — round 6
+Task: Assess project status, QA via agent-browser, then add new features + styling polish
+
+Work Log:
+- Status assessment: server healthy, lint clean, tsc clean (app code), no runtime errors. Both demo projects (Bean Route, Vertex) intact. Gap analysis vs original repo README: missing "⌘K-grade" command layer, no landing readiness/SEO audit, features/testimonials variants short of README's "30+ section templates" (Features lacked Carousel; Testimonials lacked Video + Logo-wall), no QR on deploy.
+- New infrastructure: src/lib/landing/uiStore.ts — zustand UI store (view: studio|analytics|projects, dialog: ai-generate|ai-improve|export-yaml|import-yaml|deploy|readiness|shortcuts, commandOpen) — replaces local dialog state in Toolbar; page.tsx view switching now driven by it.
+- NEW FEATURE 1 — ⌘K Command Palette (studio/CommandPalette.tsx, cmdk): fuzzy-searchable groups — Actions (save/deploy/undo/redo/preview/AI×2/YAML×2/readiness/shortcuts w/ shortcut hints), Jump-to-section (live list, hidden badges, #index), Add-section (all 12 types), Theme (6 w/ swatches + checkmark), Device (3), A/B variant preview switching, Go-to-view. Global hotkeys registered: ⌘K palette, ⌘P full-screen preview, ⌘E export, ⌘I import, ⌘D deploy, "?" shortcuts (typing-safe).
+- NEW FEATURE 2 — Landing Readiness audit (lib/landing/readiness.ts + studio/ReadinessPanel.tsx): 18 weighted checks across structure/SEO/conversion (hero, CTA, headline length, navbar/footer/social proof/pricing/FAQ/final CTA/contact, page depth, hidden sections, SEO title/description ranges, brand, A/B experiment) → 0-100 score + A-D grade. ReadinessChip in toolbar (color-coded, live), full dialog with animated SVG score ring, pass/warn/fail counts, per-check details + click-to-fix (jumps to section, selects it, closes dialog, toast). Score badge also in app bar on non-studio views.
+- NEW FEATURE 3 — QR code on deploy (qrcode pkg): DeployDialog generates QR data URL when live; "Scan to preview" panel next to URL row.
+- NEW FEATURE 4 — 3 new layout variants (subagent R6-a): Features `carousel` (scroll-snap track, prev/next, active dot pill + N/M indicator), Testimonials `video` (16:9 gradient thumbs, glass play button, duration chips, faux playing state w/ animated progress + pause), Testimonials `logo-wall` (monogram tiles + names/roles/stars). types.ts/yaml.ts normalization + PropertiesPanel selectors updated for all 3.
+- NEW FEATURE 5 — ShortcutsDialog ("?" key) — grouped shortcut reference w/ kbd styling.
+- Styling polish (subagent R6-b + main): globals.css additions — .lf-scroll (violet slim scrollbar), .lf-fade-up/.lf-fade-in/.lf-fade-up-stagger (entrance animations), .lf-focus (focus ring), .lf-glow (deploy button ambient pulse). Applied: SectionsPanel (staggered rows @30ms, hover shifts, count pill, delete rose hover), PropertiesPanel (selection cross-fade via key remount, standardized labels), DashboardView (stat-card hover lift + stagger, panel entrances, promote button gradient+glow), ProjectsView (card lift + stagger), Toolbar (deploy lf-glow), DevicePreview/DeployDialog (lf-scroll). dnd-kit drag proven unaffected (stagger applies to row content, not sortable transform).
+- Refactors: Toolbar/StudioShell/DeployDialog/Dialogs×4 → uiStore-driven dialog open state (dialogs rendered once in page.tsx, openable from toolbar, palette, hotkeys). StudioShell dropped onNavigateToProjects prop. Esc now exits full-screen preview (DevicePreview). Removed dead notifyUnsaved.
+- QA (agent-browser, desktop 1440×900 + mobile 390×844):
+  ✓ Readiness chip 95/A → dialog renders all 18 checks w/ details; fix-button flow verified
+  ✓ ⌘K palette: opens, fuzzy filter ("emerald" → 1 result), Enter applies theme; jump-to-section; add-section group; A/B variant group
+  ✓ Hotkeys: Ctrl+K/E/P + Esc-exit-preview + "?" shortcuts dialog all verified
+  ✓ Deploy pipeline → Live, QR <img> present in DOM (data URL), Copy works
+  ✓ New variants: carousel (4 cards + arrows + 1/4 dots, next/prev scroll verified), video (3 play buttons, playing state = progress bar + pause w/ aria-label), logo-wall (monograms SJ/MT/ER + names + roles + stars, VLM: "properly aligned, no overlap")
+  ✓ Regression: add Contact section → dirty Save* → undo removes it; export YAML hotkey; theme dropdown; all views re-verified
+  ✓ VLM: analytics dashboard 9/10 quality; mobile 390px clean (no overlap, no h-overflow)
+  ✓ Fresh browser session after full server restart: 0 page errors
+- Fixed during round: DeployDialog TDZ bug (status used in QR effect deps before const declaration — moved declaration above effects); Dialogs.tsx broken import typo; stale Fast Refresh error artifacts distinguished from live errors.
+- bun run lint → 0 errors 0 warnings. Dev server restarted (crashed once mid-round, back up and healthy).
+
+Stage Summary:
+- Feature parity with README's "30+ section templates" claim now real: Features 5 styles, Testimonials 5 styles, plus hero×4, faq×2, gallery×2, footer×3, pricing, stats, logos, contact, cta-final.
+- Studio now has a full keyboard/⌘K command layer + a quantified launch-readiness score — both differentiators.
+- All work verified end-to-end; no open bugs.
+- Remaining known items: funnel "Engaged" can exceed pageviews (by design); simulated deploy URL/QR points to non-existent host (illustrative); browser-language auto-detect from README not implemented (AI prompts already accept any language).

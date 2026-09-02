@@ -2,14 +2,20 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { BarChart3, ExternalLink, FolderOpen, Hammer, Loader2 } from "lucide-react"
+import { BarChart3, ExternalLink, FolderOpen, Gauge, Hammer, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
+import { useUi } from "@/lib/landing/uiStore"
+import { auditConfig } from "@/lib/landing/readiness"
 import { TEMPLATES } from "@/lib/landing/defaults"
 import { StudioShell } from "@/components/forge/studio/StudioShell"
 import { DashboardView } from "@/components/forge/dashboard/DashboardView"
 import { ProjectsView } from "@/components/forge/projects/ProjectsView"
 import { useSaveProject } from "@/components/forge/studio/useSaveProject"
+import { CommandPalette, ShortcutsDialog } from "@/components/forge/studio/CommandPalette"
+import { ReadinessDialog } from "@/components/forge/studio/ReadinessPanel"
+import { AiGenerateDialog, AiImproveDialog, ExportYamlDialog, ImportYamlDialog } from "@/components/forge/studio/Dialogs"
+import { DeployDialog } from "@/components/forge/studio/DeployDialog"
 import { toast } from "sonner"
 import type { ProjectSummary, ProjectWithConfig } from "@/lib/landing/types"
 
@@ -22,11 +28,14 @@ const VIEWS: { id: View; label: string; icon: typeof Hammer }[] = [
 ]
 
 export default function Home() {
-  const [view, setView] = React.useState<View>("studio")
+  const view = useUi((s) => s.view)
+  const setView = useUi((s) => s.setView)
   const [booting, setBooting] = React.useState(true)
   const loadProject = useForge((s) => s.loadProject)
   const dirty = useForge((s) => s.dirty)
+  const config = useForge((s) => s.config)
   const { save } = useSaveProject()
+  const report = React.useMemo(() => auditConfig(config), [config])
 
   // ── Bootstrap: load last project or create the demo project ──────────────
   React.useEffect(() => {
@@ -100,7 +109,7 @@ export default function Home() {
       {/* App bar */}
       <header className="relative z-40 flex shrink-0 items-center gap-3 border-b border-zinc-800/80 bg-zinc-950 px-3 py-2 sm:px-4">
         <Link href="https://github.com/kasimmj/landing-forge" target="_blank" rel="noreferrer" className="flex items-center gap-2.5" aria-label="landing-forge on GitHub">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/25">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/25 transition-transform hover:scale-105">
             <Hammer className="h-4 w-4 text-white" />
           </span>
           <span className="hidden text-[13px] font-extrabold tracking-tight sm:inline">
@@ -117,8 +126,10 @@ export default function Home() {
               onClick={() => setView(id)}
               aria-current={view === id ? "page" : undefined}
               className={cn(
-                "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold transition-colors sm:px-3",
-                view === id ? "bg-violet-500/25 text-violet-100 shadow-inner" : "text-zinc-500 hover:text-zinc-200"
+                "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold transition-all sm:px-3",
+                view === id
+                  ? "bg-violet-500/25 text-violet-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                  : "text-zinc-500 hover:text-zinc-200"
               )}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -129,6 +140,19 @@ export default function Home() {
 
         <div className="flex items-center gap-2">
           {dirty && <span className="hidden text-[10px] text-amber-300/80 md:inline">unsaved</span>}
+          {/* Global readiness hint (non-studio views) */}
+          {view !== "studio" && !booting && (
+            <button
+              type="button"
+              onClick={() => setView("studio")}
+              title="Open readiness audit in Studio"
+              className="hidden items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-1 text-[10px] font-semibold text-zinc-400 transition-colors hover:border-violet-500/40 hover:text-zinc-200 md:flex"
+            >
+              <Gauge className="h-3 w-3" style={{ color: report.score >= 90 ? "#34d399" : report.score >= 75 ? "#a3e635" : report.score >= 60 ? "#fbbf24" : "#fb7185" }} />
+              <span className="tabular-nums">{report.score}</span>
+              <span className="text-zinc-600">/ 100</span>
+            </button>
+          )}
           <span className="hidden rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[9px] text-zinc-500 md:inline">v0.1.0</span>
           <Link
             href="https://github.com/kasimmj/landing-forge"
@@ -155,11 +179,21 @@ export default function Home() {
         </div>
       ) : (
         <>
-          {view === "studio" && <StudioShell onNavigateToProjects={() => setView("projects")} />}
+          {view === "studio" && <StudioShell />}
           {view === "analytics" && <DashboardView />}
           {view === "projects" && <ProjectsView onOpenProject={() => setView("studio")} />}
         </>
       )}
+
+      {/* Global dialogs (open state shared via uiStore — reachable from toolbar, ⌘K palette, hotkeys) */}
+      <AiGenerateDialog />
+      <AiImproveDialog />
+      <ExportYamlDialog />
+      <ImportYamlDialog />
+      <DeployDialog />
+      <ReadinessDialog />
+      <ShortcutsDialog />
+      <CommandPalette />
 
       {/* subtle grid backdrop */}
       <div

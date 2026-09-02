@@ -136,3 +136,92 @@
 .lf-marquee-track:hover {
   animation-play-state: paused;
 }
+
+/* ── Landing Forge preview: video testimonial progress bar ── */
+@keyframes lf-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+.lf-progress-bar {
+  animation: lf-progress 12s linear forwards;
+}
+
+/* ── Landing Forge studio: custom slim scrollbars ── */
+.lf-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.35) transparent;
+}
+.lf-scroll::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.lf-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.lf-scroll::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.lf-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.55);
+  background-clip: content-box;
+}
+
+/* ── Landing Forge studio: entrance micro-animations ── */
+@keyframes lf-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.lf-fade-up {
+  animation: lf-fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes lf-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.lf-fade-in {
+  animation: lf-fade-in 0.25s ease-out both;
+}
+
+/* Staggered list entrance (panels, cards) — apply to children via style delay */
+.lf-fade-up-stagger > * {
+  animation: lf-fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Landing Forge studio: focus ring polish ── */
+.lf-focus:focus-visible {
+  outline: 2px solid rgba(167, 139, 250, 0.7);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* ── Landing Forge studio: deploy button ambient glow ── */
+@keyframes lf-glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px 2px rgba(167, 139, 250, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 32px 6px rgba(217, 70, 239, 0.4);
+  }
+}
+.lf-glow {
+  animation: lf-glow-pulse 3.2s ease-in-out infinite;
+}

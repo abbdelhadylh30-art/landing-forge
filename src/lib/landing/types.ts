@@ -73,7 +73,7 @@ export interface FeaturesSection {
   hidden?: boolean
   title?: string
   subtitle?: string
-  style: "grid" | "alternating" | "bento" | "tabs"
+  style: "grid" | "alternating" | "bento" | "tabs" | "carousel"
   columns?: number // 2 | 3 | 4 for grid
   items: FeatureItem[]
 }
@@ -106,7 +106,7 @@ export interface TestimonialsSection {
   hidden?: boolean
   title?: string
   subtitle?: string
-  style: "grid" | "marquee" | "spotlight"
+  style: "grid" | "marquee" | "spotlight" | "video" | "logo-wall"
   items: TestimonialItem[]
 }
 
@@ -238,7 +238,7 @@ export const SECTION_META: Record<SectionType, { label: string; icon: string; de
   logos: { label: "Logo Wall", icon: "🏢", description: "Trusted-by company strip" },
   features: { label: "Features", icon: "⚡", description: "Icon grid / bento / alternating" },
   stats: { label: "Stats", icon: "📊", description: "Big numbers with labels" },
-  testimonials: { label: "Testimonials", icon: "💬", description: "Quotes — grid, marquee or spotlight" },
+  testimonials: { label: "Testimonials", icon: "💬", description: "Quotes — grid, marquee, spotlight, video, logo-wall" },
   pricing: { label: "Pricing", icon: "💳", description: "Plans with annual toggle" },
   faq: { label: "FAQ", icon: "❓", description: "Accordion or two-column Q&A" },
   gallery: { label: "Gallery", icon: "🖼️", description: "Masonry or carousel visuals" },

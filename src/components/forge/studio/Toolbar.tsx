@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, Palette, Redo2, Rocket, Save, Sparkles, Undo2, Upload, Wand2 } from "lucide-react"
+import { Command as CommandIcon, Download, Palette, Redo2, Rocket, Save, Sparkles, Undo2, Upload, Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -11,15 +11,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
+import { useUi } from "@/lib/landing/uiStore"
 import { THEMES } from "@/lib/landing/themes"
-import { AiGenerateDialog, AiImproveDialog, ExportYamlDialog, ImportYamlDialog } from "./Dialogs"
-import { DeployDialog } from "./DeployDialog"
+import { ReadinessChip } from "./ReadinessPanel"
 import { useSaveProject } from "./useSaveProject"
 
-export function Toolbar({ onNavigateToProjects }: { onNavigateToProjects: () => void }) {
+export function Toolbar() {
   const projectName = useForge((s) => s.project.name)
   const setProjectMeta = useForge((s) => s.setProjectMeta)
   const themeId = useForge((s) => s.config.themeId)
@@ -29,13 +28,10 @@ export function Toolbar({ onNavigateToProjects }: { onNavigateToProjects: () => 
   const undo = useForge((s) => s.undo)
   const redo = useForge((s) => s.redo)
   const dirty = useForge((s) => s.dirty)
+  const openDialog = useUi((s) => s.openDialog)
+  const setCommandOpen = useUi((s) => s.setCommandOpen)
+  const setView = useUi((s) => s.setView)
   const { save, saving, hasProject } = useSaveProject()
-
-  const [aiOpen, setAiOpen] = React.useState(false)
-  const [improveOpen, setImproveOpen] = React.useState(false)
-  const [exportOpen, setExportOpen] = React.useState(false)
-  const [importOpen, setImportOpen] = React.useState(false)
-  const [deployOpen, setDeployOpen] = React.useState(false)
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/80 bg-zinc-950 px-3 py-2">
@@ -85,6 +81,21 @@ export function Toolbar({ onNavigateToProjects }: { onNavigateToProjects: () => 
       </DropdownMenu>
 
       <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        {/* Readiness score */}
+        <ReadinessChip />
+
+        {/* ⌘K palette trigger */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCommandOpen(true)}
+          title="Command palette (⌘K)"
+          className="h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-400 hover:border-violet-500/50 hover:text-zinc-200"
+        >
+          <CommandIcon className="h-3 w-3" />
+          <span className="hidden font-mono text-[10px] lg:inline">K</span>
+        </Button>
+
         {/* AI */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -94,10 +105,10 @@ export function Toolbar({ onNavigateToProjects }: { onNavigateToProjects: () => 
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48 border-zinc-800 bg-zinc-900">
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-zinc-500">landing-forge AI</DropdownMenuLabel>
-            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => setAiOpen(true)}>
+            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => openDialog("ai-generate")}>
               <Sparkles className="h-3.5 w-3.5 text-violet-300" /> Generate from prompt…
             </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => setImproveOpen(true)}>
+            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => openDialog("ai-improve")}>
               <Wand2 className="h-3.5 w-3.5 text-violet-300" /> Improve copy…
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -112,14 +123,14 @@ export function Toolbar({ onNavigateToProjects }: { onNavigateToProjects: () => 
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44 border-zinc-800 bg-zinc-900">
-            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => setExportOpen(true)}>
+            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => openDialog("export-yaml")}>
               <Download className="h-3.5 w-3.5 text-zinc-300" /> Export YAML…
             </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => setImportOpen(true)}>
+            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => openDialog("import-yaml")}>
               <Upload className="h-3.5 w-3.5 text-zinc-300" /> Import YAML…
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-zinc-800" />
-            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={onNavigateToProjects}>
+            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => setView("projects")}>
               <Save className="h-3.5 w-3.5 text-zinc-300" /> All projects…
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -139,21 +150,10 @@ export function Toolbar({ onNavigateToProjects }: { onNavigateToProjects: () => 
         </Button>
 
         {/* Deploy */}
-        <Button size="sm" className="h-7 gap-1.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] text-white hover:from-violet-600 hover:to-fuchsia-600" onClick={() => setDeployOpen(true)} disabled={!hasProject}>
+        <Button size="sm" className="h-7 gap-1.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] text-white lf-glow transition-all hover:from-violet-600 hover:to-fuchsia-600 active:scale-95" onClick={() => openDialog("deploy")} disabled={!hasProject}>
           <Rocket className="h-3 w-3" /> <span className="hidden sm:inline">Deploy</span>
         </Button>
       </div>
-
-      {/* Dialogs */}
-      <AiGenerateDialog open={aiOpen} onOpenChange={setAiOpen} />
-      <AiImproveDialog open={improveOpen} onOpenChange={setImproveOpen} />
-      <ExportYamlDialog open={exportOpen} onOpenChange={setExportOpen} />
-      <ImportYamlDialog open={importOpen} onOpenChange={setImportOpen} />
-      <DeployDialog open={deployOpen} onOpenChange={setDeployOpen} />
     </div>
   )
-}
-
-export function notifyUnsaved() {
-  toast.warning("Unsaved changes", { description: "Save first (⌘S) to keep your edits." })
 }

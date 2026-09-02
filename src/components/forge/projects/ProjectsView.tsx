@@ -80,7 +80,7 @@ export function ProjectsView({ onOpenProject }: { onOpenProject: (id: string) =>
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950 [scrollbar-width:thin]">
+    <div className="lf-scroll min-h-0 flex-1 overflow-y-auto bg-zinc-950">
       <div className="mx-auto max-w-6xl space-y-5 p-4 pb-16 sm:p-6">
         <div className="flex flex-wrap items-center gap-3">
           <div>
@@ -107,42 +107,44 @@ export function ProjectsView({ onOpenProject }: { onOpenProject: (id: string) =>
             </Button>
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => {
+          <div className="lf-fade-up-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {projects.map((p, i) => {
               const theme = THEMES.find((t) => t.id === p.themeId) ?? THEMES[0]
               const busyThis = busy === p.id
               return (
-                <div key={p.id} className="group overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/40 transition-all hover:-translate-y-0.5 hover:border-violet-500/40 hover:shadow-lg hover:shadow-violet-500/5">
-                  {/* theme preview strip */}
-                  <button type="button" className="block w-full text-left" onClick={() => open(p)} aria-label={`Open ${p.name}`}>
-                    <div className="relative h-24 p-3" style={{ background: `linear-gradient(135deg, ${theme.swatch[0]}, ${theme.swatch[1]})` }}>
-                      <div className="flex gap-1.5">
-                        {[70, 40, 55, 30].map((w, i) => (
-                          <div key={i} className="h-2 rounded-full" style={{ width: w, background: theme.swatch[2], opacity: 0.25 + i * 0.08 }} />
-                        ))}
+                <div key={p.id} style={{ animationDelay: `${Math.min(i * 70, 560)}ms` }}>
+                  <div className="group overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/40 transition-all duration-300 hover:-translate-y-1 hover:border-violet-500/40 hover:shadow-xl hover:shadow-violet-500/10">
+                    {/* theme preview strip */}
+                    <button type="button" className="block w-full text-left" onClick={() => open(p)} aria-label={`Open ${p.name}`}>
+                      <div className="relative h-24 p-3" style={{ background: `linear-gradient(135deg, ${theme.swatch[0]}, ${theme.swatch[1]})` }}>
+                        <div className="flex gap-1.5">
+                          {[70, 40, 55, 30].map((w, i) => (
+                            <div key={i} className="h-2 rounded-full" style={{ width: w, background: theme.swatch[2], opacity: 0.25 + i * 0.08 }} />
+                          ))}
+                        </div>
+                        <div className="mt-2 h-3 w-1/2 rounded-full" style={{ background: theme.swatch[2], opacity: 0.85 }} />
+                        <div className="mt-1.5 h-2 w-2/3 rounded-full bg-white/20" />
+                        <div className="absolute right-3 bottom-3 h-6 w-20 rounded-lg" style={{ background: theme.swatch[2] }} />
+                        <span className="absolute left-3 bottom-3 rounded-md bg-black/40 px-1.5 py-0.5 font-mono text-[9px] text-white/70 backdrop-blur">{p.sectionCount} sections</span>
                       </div>
-                      <div className="mt-2 h-3 w-1/2 rounded-full" style={{ background: theme.swatch[2], opacity: 0.85 }} />
-                      <div className="mt-1.5 h-2 w-2/3 rounded-full bg-white/20" />
-                      <div className="absolute right-3 bottom-3 h-6 w-20 rounded-lg" style={{ background: theme.swatch[2] }} />
-                      <span className="absolute left-3 bottom-3 rounded-md bg-black/40 px-1.5 py-0.5 font-mono text-[9px] text-white/70 backdrop-blur">{p.sectionCount} sections</span>
+                      <div className="p-3">
+                        <p className="truncate text-[14px] font-semibold text-zinc-100">{p.name}</p>
+                        <p className="mt-0.5 text-[10px] text-zinc-500">
+                          {theme.name} theme · updated {new Date(p.updatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    </button>
+                    <div className="flex gap-1 border-t border-zinc-800/80 p-2">
+                      <Button variant="outline" size="sm" className="h-7 flex-1 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-300 hover:border-violet-500/50 hover:text-violet-200" onClick={() => open(p)} disabled={busyThis}>
+                        {busyThis ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />} Open
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-400 hover:text-zinc-100" onClick={() => duplicate(p)} disabled={busyThis} aria-label={`Duplicate ${p.name}`} title="Duplicate">
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-400 hover:border-rose-500/50 hover:text-rose-300" onClick={() => setDeleteTarget(p)} disabled={busyThis} aria-label={`Delete ${p.name}`} title="Delete">
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
                     </div>
-                    <div className="p-3">
-                      <p className="truncate text-[14px] font-semibold text-zinc-100">{p.name}</p>
-                      <p className="mt-0.5 text-[10px] text-zinc-500">
-                        {theme.name} theme · updated {new Date(p.updatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    </div>
-                  </button>
-                  <div className="flex gap-1 border-t border-zinc-800/80 p-2">
-                    <Button variant="outline" size="sm" className="h-7 flex-1 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-300 hover:border-violet-500/50 hover:text-violet-200" onClick={() => open(p)} disabled={busyThis}>
-                      {busyThis ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />} Open
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-400 hover:text-zinc-100" onClick={() => duplicate(p)} disabled={busyThis} aria-label={`Duplicate ${p.name}`} title="Duplicate">
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-400 hover:border-rose-500/50 hover:text-rose-300" onClick={() => setDeleteTarget(p)} disabled={busyThis} aria-label={`Delete ${p.name}`} title="Delete">
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
                   </div>
                 </div>
               )
@@ -273,8 +275,8 @@ function CreateProjectDialog({ open, onOpenChange, onCreated }: { open: boolean;
                   type="button"
                   onClick={() => setTemplateId(t.id)}
                   className={cn(
-                    "rounded-lg border p-2.5 text-left transition-all hover:border-violet-500/50",
-                    templateId === t.id ? "border-violet-500 bg-violet-500/10 ring-1 ring-violet-500/30" : "border-zinc-800 bg-zinc-900/40"
+                    "rounded-lg border p-2.5 text-left transition-all hover:scale-[1.02] hover:border-violet-500/50",
+                    templateId === t.id ? "border-violet-500 bg-violet-500/10 ring-1 ring-violet-500/30" : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/60"
                   )}
                   aria-pressed={templateId === t.id}
                 >

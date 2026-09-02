@@ -1,25 +1,33 @@
 "use client"
 
 import * as React from "react"
-import { Check, Copy, ExternalLink, Loader2, Rocket } from "lucide-react"
+import QRCode from "qrcode"
+import { Check, Copy, ExternalLink, Loader2, QrCode, Rocket, Smartphone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
+import { useUi } from "@/lib/landing/uiStore"
 import type { DeployRecord } from "@/lib/landing/types"
 
 const EXPECTED_STEPS = 9
 
-export function DeployDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function DeployDialog() {
+  const open = useUi((s) => s.dialog === "deploy")
+  const closeDialog = useUi((s) => s.closeDialog)
+  const onOpenChange = React.useCallback((v: boolean) => { if (!v) closeDialog() }, [closeDialog])
+
   const projectId = useForge((s) => s.project.id)
   const projectName = useForge((s) => s.project.name)
   const slug = useForge((s) => s.project.slug)
   const [deploy, setDeploy] = React.useState<DeployRecord | null>(null)
   const [starting, setStarting] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
+  const [qr, setQr] = React.useState<string | null>(null)
   const logRef = React.useRef<HTMLDivElement>(null)
+  const status = deploy?.status ?? "queued"
 
   // Start a deploy when dialog opens
   React.useEffect(() => {
@@ -77,6 +85,21 @@ export function DeployDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
   }, [deploy?.logs?.length])
 
+  // Generate a QR code for the live URL (scan to open on phone)
+  React.useEffect(() => {
+    if (status === "live" && deploy?.url) {
+      QRCode.toDataURL(deploy.url, {
+        width: 220,
+        margin: 1,
+        color: { dark: "#10041f", light: "#ffffff" },
+      })
+        .then(setQr)
+        .catch(() => setQr(null))
+    } else {
+      setQr(null)
+    }
+  }, [status, deploy?.url])
+
   const copyUrl = async () => {
     if (!deploy?.url) return
     try {
@@ -89,7 +112,6 @@ export function DeployDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     }
   }
 
-  const status = deploy?.status ?? "queued"
   const progress = Math.min(100, Math.round(((deploy?.logs?.length ?? 0) / EXPECTED_STEPS) * 100))
 
   return (
@@ -125,7 +147,7 @@ export function DeployDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <Progress value={status === "live" ? 100 : progress} className="h-1.5 [&_[data-slot=progress-indicator]]:bg-violet-500" />
 
           {/* Log terminal */}
-          <div ref={logRef} className="h-52 overflow-y-auto rounded-lg border border-zinc-800 bg-black/70 p-3 font-mono text-[11px] leading-relaxed [scrollbar-width:thin]">
+          <div ref={logRef} className="h-52 overflow-y-auto rounded-lg border border-zinc-800 bg-black/70 p-3 font-mono text-[11px] leading-relaxed lf-scroll">
             {(deploy?.logs ?? []).map((line, i) => (
               <p key={i} className={cn("whitespace-pre-wrap", line.level === "success" ? "text-emerald-300" : line.level === "warn" ? "text-amber-300" : "text-zinc-400")}>
                 <span className="text-zinc-600">{new Date(line.t).toLocaleTimeString([], { hour12: false })} </span>
@@ -135,14 +157,31 @@ export function DeployDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             {(starting || status === "queued") && <p className="animate-pulse text-violet-400">▍</p>}
           </div>
 
-          {/* URL row */}
+          {/* URL row + QR */}
           {deploy?.url && status === "live" && (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
-              <ExternalLink className="h-4 w-4 shrink-0 text-emerald-300" />
-              <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-emerald-200">{deploy.url}</code>
-              <Button variant="outline" size="sm" className="h-7 gap-1 border-zinc-700 bg-transparent text-[11px] hover:border-emerald-500/50 hover:text-emerald-200" onClick={copyUrl}>
-                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} Copy
-              </Button>
+            <div className="grid gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5 sm:grid-cols-[1fr_auto]">
+              <div className="flex min-w-0 items-center gap-2">
+                <ExternalLink className="h-4 w-4 shrink-0 text-emerald-300" />
+                <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-emerald-200">{deploy.url}</code>
+                <Button variant="outline" size="sm" className="h-7 gap-1 border-zinc-700 bg-transparent text-[11px] hover:border-emerald-500/50 hover:text-emerald-200" onClick={copyUrl}>
+                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} Copy
+                </Button>
+              </div>
+              <div className="flex items-center gap-3 border-t border-emerald-500/20 pt-2 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+                <div className="h-[76px] w-[76px] shrink-0 overflow-hidden rounded-md border border-emerald-500/30 bg-white p-1">
+                  {qr ? (
+                    <img src={qr} alt={`QR code linking to ${deploy.url}`} className="h-full w-full" />
+                  ) : (
+                    <QrCode className="h-full w-full animate-pulse text-zinc-300" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-200">
+                    <Smartphone className="h-3 w-3" /> Scan to preview
+                  </p>
+                  <p className="mt-0.5 text-[10px] leading-tight text-zinc-500">Open the live page on your phone</p>
+                </div>
+              </div>
             </div>
           )}
         </div>
