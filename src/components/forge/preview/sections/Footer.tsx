@@ -15,6 +15,8 @@ import { CONTAINER } from "../shared"
 export interface FooterProps {
   section: FooterSection
   brandName: string
+  /** brand logo URL (brand kit) — replaces the gradient mark when present */
+  logoUrl?: string
   onCtaClick?: (label: string) => void
 }
 
@@ -42,10 +44,21 @@ function SocialButton({ label }: { label: string }) {
   )
 }
 
-function BrandMark({ brand }: { brand: string }) {
+function BrandMark({ brand, logoUrl }: { brand: string; logoUrl?: string }) {
   return (
     <span className="flex items-center gap-2.5">
-      <span aria-hidden className="size-7 shrink-0 rounded-lg" style={{ background: "var(--lf-gradient)" }} />
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={`${brand} logo`}
+          className="h-7 w-auto max-w-[120px] shrink-0 rounded-md object-contain"
+          onError={(e) => {
+            e.currentTarget.style.display = "none"
+          }}
+        />
+      ) : (
+        <span aria-hidden className="size-7 shrink-0 rounded-lg" style={{ background: "var(--lf-gradient)" }} />
+      )}
       <span className="text-[15px] font-bold tracking-tight" style={{ color: "var(--lf-text)" }}>
         {brand}
       </span>
@@ -53,12 +66,12 @@ function BrandMark({ brand }: { brand: string }) {
   )
 }
 
-function MinimalFooter({ section, brand }: { section: FooterSection; brand: string }) {
+function MinimalFooter({ section, brand, logoUrl }: { section: FooterSection; brand: string; logoUrl?: string }) {
   const socials = section.social ?? []
   return (
     <div className="flex flex-col items-center justify-between gap-5 sm:flex-row">
       <div className="flex flex-col items-center gap-1.5 sm:items-start">
-        <BrandMark brand={brand} />
+        <BrandMark brand={brand} logoUrl={logoUrl} />
         {section.tagline ? (
           <p className="text-sm" style={{ color: "var(--lf-muted)" }}>
             {section.tagline}
@@ -76,14 +89,14 @@ function MinimalFooter({ section, brand }: { section: FooterSection; brand: stri
   )
 }
 
-function MegaFooter({ section, brand }: { section: FooterSection; brand: string }) {
+function MegaFooter({ section, brand, logoUrl }: { section: FooterSection; brand: string; logoUrl?: string }) {
   const socials = section.social ?? []
   const groups = section.linkGroups ?? []
   return (
     <div>
       <div className="grid grid-cols-2 gap-8 md:grid-cols-5 md:gap-10">
         <div className="col-span-2 flex flex-col items-start gap-3">
-          <BrandMark brand={brand} />
+          <BrandMark brand={brand} logoUrl={logoUrl} />
           {section.tagline ? (
             <p className="max-w-xs text-sm leading-relaxed" style={{ color: "var(--lf-muted)" }}>
               {section.tagline}
@@ -129,7 +142,7 @@ function Copyright({ section, brand }: { section: FooterSection; brand: string }
   )
 }
 
-function NewsletterFooter({ section, brand, onCtaClick }: { section: FooterSection; brand: string; onCtaClick?: (label: string) => void }) {
+function NewsletterFooter({ section, brand, logoUrl, onCtaClick }: { section: FooterSection; brand: string; logoUrl?: string; onCtaClick?: (label: string) => void }) {
   const [email, setEmail] = useState("")
   const [subscribed, setSubscribed] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -158,7 +171,7 @@ function NewsletterFooter({ section, brand, onCtaClick }: { section: FooterSecti
 
   return (
     <div className={cn(CONTAINER, "flex flex-col items-center text-center")}>
-      <BrandMark brand={brand} />
+      <BrandMark brand={brand} logoUrl={logoUrl} />
       {section.tagline ? (
         <h2 className="mt-4 max-w-xl text-2xl font-extrabold tracking-tight" style={{ color: "var(--lf-text)" }}>
           {section.tagline}
@@ -226,20 +239,20 @@ function NewsletterFooter({ section, brand, onCtaClick }: { section: FooterSecti
   )
 }
 
-export function Footer({ section, brandName, onCtaClick }: FooterProps) {
+export function Footer({ section, brandName, logoUrl, onCtaClick }: FooterProps) {
   const brand = brandName || "Brand"
 
   return (
     <footer className={cn(section.style === "minimal" ? "py-10" : "py-14")}>
       {section.style === "newsletter" ? (
-        <NewsletterFooter section={section} brand={brand} onCtaClick={onCtaClick} />
+        <NewsletterFooter section={section} brand={brand} logoUrl={logoUrl} onCtaClick={onCtaClick} />
       ) : (
         <div className={CONTAINER}>
           {section.style === "mega" ? (
-            <MegaFooter section={section} brand={brand} />
+            <MegaFooter section={section} brand={brand} logoUrl={logoUrl} />
           ) : (
             <>
-              <MinimalFooter section={section} brand={brand} />
+              <MinimalFooter section={section} brand={brand} logoUrl={logoUrl} />
               <div className="mt-8 border-t pt-6 text-center" style={{ borderColor: "var(--lf-border)" }}>
                 <Copyright section={section} brand={brand} />
               </div>

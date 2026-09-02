@@ -6,6 +6,8 @@
 //         visitorId?, duration?, isBounce?, label?, variant?, value? }
 //   type: "pageview" | "cta_click" | "form_submit" | "section_view" |
 //         "variant_exposure" | "promote_winner"
+//   pageview: `variant` (optional) tags the visit with the A/B variant it was
+//   exposed to — powers per-variant duration/engagement reporting.
 // → 200 { ok: true, id } | 400 | 404
 //
 // PATCH /api/analytics/track — engagement update for a pageview record
@@ -50,6 +52,7 @@ export async function POST(req: NextRequest) {
           device: str(body.device) || "desktop",
           browser: str(body.browser) || "Chrome",
           visitorId: str(body.visitorId) || "anon",
+          variant: optStr(body.variant),
           duration: Math.max(0, Math.floor(num(body.duration) ?? 0)),
           isBounce: body.isBounce === true,
         },

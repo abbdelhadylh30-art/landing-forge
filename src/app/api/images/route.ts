@@ -1,14 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// /api/images — generated-image library (public/uploads)
+// /api/images — image library (public/uploads): AI-generated + user uploads
 //
 // GET    /api/images                     → 200 { images: ImageAsset[] }
 //   ImageAsset: { name, url, bytes, createdAt, usedBy: string[] (project names) }
+// POST   /api/images                     → 200 { ok: true, url }
+//   body: multipart/form-data with a `file` field (PNG / JPG / WebP, ≤ 2MB)
+//   — user uploads (e.g. brand logos) land in the same library
 // DELETE /api/images?url=/uploads/lf-x.png
 //   → 200 { ok: true, deleted } | 409 { error, usedBy } (image still referenced
 //     by a project config) | 400 (invalid url) | 404 (file missing)
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server"
-import { readdir, stat, unlink } from "node:fs/promises"
+import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { db } from "@/lib/db"
 import { guard, HttpError } from "@/lib/landing/server"
@@ -19,6 +22,7 @@ export const dynamic = "force-dynamic"
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads")
 // only serve/delete files we know the shape of — blocks path traversal
 const URL_RE = /^\/uploads\/([a-z0-9][a-z0-9-]*)\.(png|jpe?g|webp)$/i
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
 interface ImageAsset {
   name: string
@@ -56,6 +60,26 @@ async function listImages(): Promise<ImageAsset[]> {
 
 export async function GET() {
   return guard(async () => NextResponse.json({ images: await listImages() }))
+}
+
+/** Upload a user image (e.g. brand logo) into the library. */
+export async function POST(req: NextRequest) {
+  return guard(async () => {
+    const form = await req.formData().catch(() => null)
+    if (!form) throw new HttpError(400, "Expected multipart/form-data with a 'file' field")
+    const file = form.get("file")
+    if (!(file instanceof File)) throw new HttpError(400, "Missing 'file' field")
+    if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+      throw new HttpError(400, "Unsupported file type — use PNG, JPG or WebP")
+    }
+    if (file.size > MAX_UPLOAD_BYTES) throw new HttpError(400, "File too large — max 2MB")
+
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg"
+    const name = `lf-${crypto.randomUUID().slice(0, 12)}.${ext}`
+    await mkdir(UPLOAD_DIR, { recursive: true })
+    await writeFile(path.join(UPLOAD_DIR, name), Buffer.from(await file.arrayBuffer()))
+    return NextResponse.json({ ok: true, url: `/uploads/${name}` })
+  })
 }
 
 export async function DELETE(req: NextRequest) {

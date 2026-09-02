@@ -9,10 +9,12 @@
 // then seeds:
 //  - per-day pageviews (40 + rand(0..90), mild upward trend, weekend dip)
 //  - visitor pool ≈ views/2.2 (so unique < pageviews), weighted referrers /
-//    countries / devices / browsers, low-skewed durations, 42% bounces
-//  - if hero A/B enabled (≥2 variants): ~70% of views get variant_exposure
-//    (config weights) and cta_clicks at 6–12% CTR with the LAST variant biased
-//    ~1.8x so the auto-winner story works once the sample size is reached
+//    countries / devices / browsers; bounce visits get short durations (1–14s)
+//    and engaged visits 15s+ (consistent with the engagement-ping semantics)
+//  - if hero A/B enabled (≥2 variants): ~70% of views are variant-tagged AND
+//    get variant_exposure (config weights); the LAST variant is biased to also
+//    hold attention (~+40% duration, −⅓ bounce) and clicks at ~1.8x CTR so the
+//    auto-winner + per-variant engagement story works once sample is reached
 //  - else cta_clicks at 4–7% of views (variant null)
 //  - section_view events (~1.5 per view, labels from config sections)
 //  - form_submit ~0.8% of views
@@ -76,6 +78,7 @@ interface ViewRow {
   country: string
   device: string
   browser: string
+  variant: string | null
   duration: number
   isBounce: boolean
   createdAt: Date
@@ -185,6 +188,26 @@ export async function POST(req: NextRequest) {
       const dayEnd = Math.min(dayStart.getTime() + 24 * 3600 * 1000, now.getTime())
       for (let i = 0; i < views; i++) {
         const t = new Date(dayStart.getTime() + Math.random() * Math.max(1, dayEnd - dayStart.getTime()))
+
+        // A/B: decide the exposure BEFORE the view row so the visit itself is
+        // variant-tagged (per-variant duration/engagement reporting)
+        let variant: string | null = null
+        if (abVariants.length >= 2 && Math.random() < 0.7) {
+          variant = pickWeighted(
+            abVariants.map((v) => [v.name, Math.max(1, v.weight)] as [string, number])
+          )
+          eventRows.push({ projectId, type: "variant_exposure", label: "hero", variant, value: 0, path: "/", createdAt: t })
+        }
+
+        // engagement story: bounces are short; engaged visits hold 15s+; the
+        // biased (last) variant holds attention longer and bounces less
+        const isWinner = variant !== null && variant === lastVariantName
+        const bounceP = variant ? (isWinner ? 0.3 : 0.45) : 0.42
+        const isBounce = Math.random() < bounceP
+        const duration = isBounce
+          ? randInt(1, 14)
+          : 15 + Math.floor((isWinner ? 340 : 235) * Math.pow(Math.random(), 1.8))
+
         viewRows.push({
           projectId,
           visitorId: visitors[randInt(0, visitors.length - 1)],
@@ -193,26 +216,20 @@ export async function POST(req: NextRequest) {
           country: pickWeighted(COUNTRIES),
           device: pickWeighted(DEVICES),
           browser: pickWeighted(BROWSERS),
-          duration: 5 + Math.floor(275 * Math.pow(Math.random(), 2.2)), // weighted low
-          isBounce: Math.random() < 0.42,
+          variant,
+          duration,
+          isBounce,
           createdAt: t,
         })
 
         const clickTime = () =>
           new Date(Math.min(now.getTime(), t.getTime() + randInt(10, 180) * 1000))
 
-        if (abVariants.length >= 2) {
-          if (Math.random() < 0.7) {
-            // exposure assigned by config weights
-            const variant = pickWeighted(
-              abVariants.map((v) => [v.name, Math.max(1, v.weight)] as [string, number])
-            )
-            eventRows.push({ projectId, type: "variant_exposure", label: "hero", variant, value: 0, path: "/", createdAt: t })
-            // last variant biased ~1.8x CTR so it wins once sample reached
-            const rate = abClickRate * (variant === lastVariantName ? 1.8 : 1)
-            if (Math.random() < rate) {
-              eventRows.push({ projectId, type: "cta_click", label: "hero", variant, value: 0, path: "/", createdAt: clickTime() })
-            }
+        if (variant !== null) {
+          // last variant biased ~1.8x CTR so it wins once sample reached
+          const rate = abClickRate * (isWinner ? 1.8 : 1)
+          if (Math.random() < rate) {
+            eventRows.push({ projectId, type: "cta_click", label: "hero", variant, value: 0, path: "/", createdAt: clickTime() })
           }
         } else if (Math.random() < plainClickRate) {
           eventRows.push({ projectId, type: "cta_click", label: "hero", variant: null, value: 0, path: "/", createdAt: clickTime() })

@@ -52,13 +52,19 @@ export function LandingPreview({
       : null
 
   const visible = config.sections.filter((s) => !s.hidden)
-  // Stable anchor targets: the first section of each type gets an id matching
-  // its type ("features", "pricing", "faq", …) so navbar/CTA links like
+  // Stable anchor targets: by default the first section of each type gets an id
+  // matching its type ("features", "pricing", …) so navbar/CTA links like
   // href="#pricing" scroll to it — in the published page and exported HTML.
+  // A per-section `anchor` override wins (slugified), still reserving the type.
   // "cta-final" is additionally aliased to "cta" (the default href target).
   const anchorFor = (() => {
     const seen = new Set<string>()
     return (section: Section, index: number): string | undefined => {
+      const custom = section.anchor?.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "")
+      if (custom) {
+        seen.add(section.type) // a custom anchor reserves the type slot too
+        return custom
+      }
       if (seen.has(section.type)) return undefined
       seen.add(section.type)
       if (index > 0 && section.type === "navbar") return undefined // navbar targets are pointless
@@ -119,7 +125,7 @@ export function LandingPreview({
 
   return (
     <div
-      style={themeStyle(config.themeId)}
+      style={themeStyle(config.themeId, config.brand.accent)}
       className={cn("w-full min-h-full font-sans", selectionMode && "select-none", className)}
     >
       {visible.map((section, i) => {
@@ -132,6 +138,7 @@ export function LandingPreview({
                   <SectionRenderer
                     section={section}
                     brandName={config.brand.name}
+                    brandLogo={config.brand.logoUrl}
                     abOverride={abOverride}
                     onCtaClick={onCtaClick}
                     onFormSubmit={onFormSubmit}
@@ -146,6 +153,7 @@ export function LandingPreview({
               key={section.id}
               section={section}
               brandName={config.brand.name}
+              brandLogo={config.brand.logoUrl}
               abOverride={abOverride}
               onCtaClick={onCtaClick}
               onFormSubmit={onFormSubmit}
@@ -161,6 +169,7 @@ export function LandingPreview({
               <SectionRenderer
                 section={section}
                 brandName={config.brand.name}
+                brandLogo={config.brand.logoUrl}
                 abOverride={abOverride}
                 onCtaClick={onCtaClick}
                 onFormSubmit={onFormSubmit}

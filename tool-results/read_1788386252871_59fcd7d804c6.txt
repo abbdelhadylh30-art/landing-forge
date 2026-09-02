@@ -1,0 +1,658 @@
+     1→"use client"
+     2→
+     3→import * as React from "react"
+     4→import {
+     5→  Area,
+     6→  AreaChart,
+     7→  Bar,
+     8→  BarChart,
+     9→  CartesianGrid,
+    10→  Cell,
+    11→  Pie,
+    12→  PieChart,
+    13→  ResponsiveContainer,
+    14→  Tooltip,
+    15→  XAxis,
+    16→  YAxis,
+    17→} from "recharts"
+    18→import { BarChart3, Crown, Download, Globe2, Loader2, Mail, MonitorSmartphone, MousePointerClick, Pause, Radio, Sparkles, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
+    19→import { Button } from "@/components/ui/button"
+    20→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+    21→import { toast } from "sonner"
+    22→import { cn } from "@/lib/utils"
+    23→import { useForge } from "@/lib/landing/store"
+    24→import type { AnalyticsPayload, LeadRecord } from "@/lib/landing/types"
+    25→import { LeadDetailSheet, downloadLeadsCsv } from "./LeadDetailSheet"
+    26→
+    27→const ACCENT = "#A78BFA"
+    28→const ACCENT2 = "#f0abfc"
+    29→const GREEN = "#34d399"
+    30→
+    31→function countryFlag(code: string): string {
+    32→  if (!/^[A-Z]{2}$/.test(code)) return "🌐"
+    33→  return String.fromCodePoint(...[...code].map((c) => 127397 + c.charCodeAt(0)))
+    34→}
+    35→
+    36→function fmtNum(n: number): string {
+    37→  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M"
+    38→  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k"
+    39→  return String(Math.round(n))
+    40→}
+    41→
+    42→function fmtDuration(s: number): string {
+    43→  if (!s) return "0s"
+    44→  const m = Math.floor(s / 60)
+    45→  const sec = Math.round(s % 60)
+    46→  return m ? `${m}m ${sec}s` : `${sec}s`
+    47→}
+    48→
+    49→function StatCard({ icon: Icon, label, value, delta, deltaUp, hint }: { icon: typeof Users; label: string; value: string; delta?: string; deltaUp?: boolean; hint?: string }) {
+    50→  return (
+    51→    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4 transition-all hover:-translate-y-0.5 hover:border-violet-500/30 hover:bg-zinc-900/70">
+    52→      <div className="flex items-center justify-between">
+    53→        <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
+    54→        <Icon className="h-4 w-4 text-violet-300/70" />
+    55→      </div>
+    56→      <p className="mt-2 text-2xl font-extrabold tracking-tight text-zinc-50">{value}</p>
+    57→      {delta && (
+    58→        <p className={cn("mt-1 flex items-center gap-1 text-[11px]", deltaUp ? "text-emerald-400" : "text-rose-400")}>
+    59→          {deltaUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />} {delta}
+    60→        </p>
+    61→      )}
+    62→      {hint && <p className="mt-1 text-[10px] text-zinc-600">{hint}</p>}
+    63→    </div>
+    64→  )
+    65→}
+    66→
+    67→function PanelCard({ title, icon: Icon, children, actions }: { title: string; icon: typeof Globe2; children: React.ReactNode; actions?: React.ReactNode }) {
+    68→  return (
+    69→    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4">
+    70→      <div className="mb-3 flex items-center gap-2">
+    71→        <Icon className="h-4 w-4 text-violet-300" />
+    72→        <h3 className="text-[13px] font-semibold text-zinc-100">{title}</h3>
+    73→        <div className="ml-auto">{actions}</div>
+    74→      </div>
+    75→      {children}
+    76→    </div>
+    77→  )
+    78→}
+    79→
+    80→const CHART_TOOLTIP = {
+    81→  contentStyle: {
+    82→    background: "#18181b",
+    83→    border: "1px solid #3f3f46",
+    84→    borderRadius: "8px",
+    85→    fontSize: "11px",
+    86→    color: "#e4e4e7",
+    87→  },
+    88→  labelStyle: { color: "#a1a1aa" },
+    89→} as const
+    90→
+    91→export function DashboardView() {
+    92→  const projectId = useForge((s) => s.project.id)
+    93→  const projectName = useForge((s) => s.project.name)
+    94→  const slug = useForge((s) => s.project.slug)
+    95→  const updateSection = useForge((s) => s.updateSection)
+    96→  const sections = useForge((s) => s.config.sections)
+    97→
+    98→  const [data, setData] = React.useState<AnalyticsPayload | null>(null)
+    99→  const [leads, setLeads] = React.useState<LeadRecord[]>([])
+   100→  const [selectedLead, setSelectedLead] = React.useState<LeadRecord | null>(null)
+   101→  const [loading, setLoading] = React.useState(true)
+   102→  const [seeding, setSeeding] = React.useState(false)
+   103→  const [days, setDays] = React.useState("30")
+   104→  // live refresh: poll while enabled + tab visible; only re-render on change
+   105→  const [live, setLive] = React.useState(true)
+   106→  const [lastRefresh, setLastRefresh] = React.useState<number | null>(null)
+   107→  const [hasNew, setHasNew] = React.useState(false)
+   108→
+   109→  const load = React.useCallback(
+   110→    async (opts?: { quiet?: boolean }) => {
+   111→      if (!projectId) return
+   112→      if (!opts?.quiet) setLoading(true)
+   113→      try {
+   114→        const res = await fetch(`/api/analytics?projectId=${projectId}&days=${days}`)
+   115→        const payload = (await res.json()) as AnalyticsPayload
+   116→        setData((prev) => {
+   117→          if (prev && JSON.stringify(prev) === JSON.stringify(payload)) return prev
+   118→          if (prev && opts?.quiet) setHasNew(true)
+   119→          return payload
+   120→        })
+   121→      } catch {
+   122→        if (!opts?.quiet) toast.error("Could not load analytics")
+   123→      } finally {
+   124→        if (!opts?.quiet) setLoading(false)
+   125→        if (opts?.quiet) setLastRefresh(Date.now())
+   126→      }
+   127→      try {
+   128→        const res = await fetch(`/api/leads?projectId=${projectId}&take=50`)
+   129→        const out = (await res.json()) as { leads?: LeadRecord[] }
+   130→        setLeads((prev) => (prev && JSON.stringify(prev) === JSON.stringify(out.leads ?? []) ? prev : (out.leads ?? [])))
+   131→      } catch {
+   132→        /* leads inbox is best-effort */
+   133→      }
+   134→    },
+   135→    [projectId, days]
+   136→  )
+   137→
+   138→  React.useEffect(() => {
+   139→    void load()
+   140→  }, [load])
+   141→
+   142→  // ── Live polling: refresh every 5s while enabled and the tab is visible.
+   143→  // Payloads are diffed — unchanged data never re-renders the charts.
+   144→  React.useEffect(() => {
+   145→    if (!live || !projectId) return
+   146→    const t = setInterval(() => {
+   147→      if (!document.hidden) void load({ quiet: true })
+   148→    }, 5000)
+   149→    return () => clearInterval(t)
+   150→  }, [live, projectId, load])
+   151→
+   152→  const seed = async () => {
+   153→    if (!projectId) return
+   154→    setSeeding(true)
+   155→    try {
+   156→      const res = await fetch("/api/analytics/seed", {
+   157→        method: "POST",
+   158→        headers: { "content-type": "application/json" },
+   159→        body: JSON.stringify({ projectId, days: Number(days) }),
+   160→      })
+   161→      const out = (await res.json()) as { pageviews?: number; events?: number; leads?: number; error?: string }
+   162→      if (!res.ok) throw new Error(out.error)
+   163→      toast.success("Demo traffic generated 🌍", { description: `${fmtNum(out.pageviews ?? 0)} pageviews · ${fmtNum(out.events ?? 0)} events · ${out.leads ?? 0} leads` })
+   164→      await load()
+   165→    } catch (e) {
+   166→      toast.error("Seeding failed", { description: e instanceof Error ? e.message : undefined })
+   167→    } finally {
+   168→      setSeeding(false)
+   169→    }
+   170→  }
+   171→
+   172→  // clear the "new data" hint once the user has seen it (any interaction)
+   173→  React.useEffect(() => {
+   174→    if (!hasNew) return
+   175→    const t = setTimeout(() => setHasNew(false), 6000)
+   176→    return () => clearTimeout(t)
+   177→  }, [hasNew])
+   178→
+   179→  const promoteWinner = async () => {
+   180→    const hero = sections.find((s) => s.type === "hero" && s.ab?.enabled)
+   181→    if (!hero || hero.type !== "hero" || !data?.ab?.winner) return
+   182→    const winnerVariant = data.ab.variants.find((v) => v.name === data.ab!.winner)
+   183→    if (!winnerVariant) return
+   184→    updateSection(hero.id, {
+   185→      headline: winnerVariant.headline,
+   186→      ab: { ...hero.ab!, enabled: false },
+   187→    })
+   188→    if (projectId) {
+   189→      // persist the promoted config so analytics & reloads agree (await before refetch)
+   190→      const updated = useForge.getState().config
+   191→      try {
+   192→        await fetch(`/api/projects/${projectId}`, {
+   193→          method: "PATCH",
+   194→          headers: { "content-type": "application/json" },
+   195→          body: JSON.stringify({ name: useForge.getState().project.name, config: updated }),
+   196→        })
+   197→      } catch {
+   198→        /* keep local update even if persist fails */
+   199→      }
+   200→      void fetch("/api/analytics/track", {
+   201→        method: "POST",
+   202→        headers: { "content-type": "application/json" },
+   203→        body: JSON.stringify({ projectId, type: "promote_winner", label: `Promoted variant ${data.ab.winner}`, variant: data.ab.winner }),
+   204→      })
+   205→    }
+   206→    toast.success(`Variant ${data.ab.winner} promoted 👑`, { description: "Winning headline applied to the hero; test paused." })
+   207→    await load()
+   208→  }
+   209→
+   210→  if (loading && !data) {
+   211→    return (
+   212→      <div className="flex min-h-0 flex-1 items-center justify-center">
+   213→        <div className="flex flex-col items-center gap-3 text-zinc-500">
+   214→          <Loader2 className="h-6 w-6 animate-spin text-violet-400" />
+   215→          <p className="text-[12px]">Loading analytics…</p>
+   216→        </div>
+   217→      </div>
+   218→    )
+   219→  }
+   220→
+   221→  const stats = data?.stats
+   222→  const hasData = (stats?.pageviews ?? 0) > 0
+   223→  const funnelMax = Math.max(1, ...(data?.funnel.map((f) => f.count) ?? [1]))
+   224→
+   225→  return (
+   226→    <div className="lf-scroll min-h-0 flex-1 overflow-y-auto bg-zinc-950">
+   227→      <div className="mx-auto max-w-6xl space-y-4 p-4 pb-16 sm:p-6">
+   228→        {/* Header */}
+   229→        <div className="flex flex-wrap items-center gap-3">
+   230→          <div>
+   231→            <h2 className="flex items-center gap-2 text-lg font-bold text-zinc-50">
+   232→              <BarChart3 className="h-5 w-5 text-violet-300" /> Analytics — {projectName}
+   233→            </h2>
+   234→            <p className="text-[11px] text-zinc-500">
+   235→              Privacy-friendly · no cookies · GDPR-safe · <span className="font-mono">/{slug}/dashboard</span>
+   236→            </p>
+   237→          </div>
+   238→          <div className="ml-auto flex flex-wrap items-center gap-2">
+   239→            {/* Live auto-refresh toggle — polls every 5s while the tab is visible */}
+   240→            <button
+   241→              type="button"
+   242→              role="switch"
+   243→              aria-checked={live}
+   244→              onClick={() => setLive((v) => !v)}
+   245→              title={
+   246→                live
+   247→                  ? `Live refresh on — new published-page visits appear automatically${lastRefresh ? ` (last check ${Math.max(0, Math.round((Date.now() - lastRefresh) / 1000))}s ago)` : ""}`
+   248→                  : "Live refresh paused — click to resume auto-updating"
+   249→              }
+   250→              className={cn(
+   251→                "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
+   252→                live
+   253→                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+   254→                  : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300"
+   255→              )}
+   256→            >
+   257→              {live ? (
+   258→                <span className="relative flex size-2" aria-hidden>
+   259→                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+   260→                  <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+   261→                </span>
+   262→              ) : (
+   263→                <Pause className="h-3 w-3" />
+   264→              )}
+   265→              {live ? "Live" : "Paused"}
+   266→              {live && hasNew && <span className="h-1.5 w-1.5 rounded-full bg-violet-400" title="New data just arrived" aria-label="New data arrived" />}
+   267→            </button>
+   268→            <Select value={days} onValueChange={setDays}>
+   269→              <SelectTrigger className="h-8 w-24 border-zinc-800 bg-zinc-900 text-[12px] text-zinc-200" aria-label="Date range">
+   270→                <SelectValue />
+   271→              </SelectTrigger>
+   272→              <SelectContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
+   273→                <SelectItem value="7" className="text-[12px] focus:bg-violet-500/20">Last 7 days</SelectItem>
+   274→                <SelectItem value="30" className="text-[12px] focus:bg-violet-500/20">Last 30 days</SelectItem>
+   275→                <SelectItem value="90" className="text-[12px] focus:bg-violet-500/20">Last 90 days</SelectItem>
+   276→              </SelectContent>
+   277→            </Select>
+   278→            <Button
+   279→              variant="outline"
+   280→              size="sm"
+   281→              className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 text-[11px] text-zinc-200 hover:border-emerald-500/50 hover:text-emerald-200"
+   282→              onClick={() => slug && window.open(`/?p=${encodeURIComponent(slug)}`, "_blank", "noopener")}
+   283→              title="Open the published page — pageviews, CTA clicks and form submits there flow into this dashboard"
+   284→            >
+   285→              <Globe2 className="h-3 w-3 text-emerald-300" /> View live page
+   286→            </Button>
+   287→            <Button variant="outline" size="sm" className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 text-[11px] text-zinc-200 hover:border-violet-500/50" onClick={seed} disabled={seeding}>
+   288→              {seeding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-amber-300" />} Simulate traffic
+   289→            </Button>
+   290→            <Button
+   291→              variant="outline"
+   292→              size="sm"
+   293→              className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 text-[11px] text-zinc-200 hover:border-violet-500/50"
+   294→              onClick={() => projectId && window.open(`/api/analytics/export?projectId=${projectId}`, "_blank")}
+   295→              disabled={!hasData}
+   296→            >
+   297→              <Download className="h-3 w-3" /> Export CSV
+   298→            </Button>
+   299→          </div>
+   300→        </div>
+   301→
+   302→        {!hasData ? (
+   303→          <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-zinc-800 py-20 text-center">
+   304→            <Globe2 className="h-10 w-10 text-zinc-700" />
+   305→            <div>
+   306→              <p className="text-[15px] font-semibold text-zinc-200">No traffic yet</p>
+   307→              <p className="mt-1 max-w-sm text-[12px] text-zinc-500">
+   308→                Use “Test preview” in the Studio to record real pageviews & CTA clicks, or generate a realistic 30-day demo dataset.
+   309→              </p>
+   310→            </div>
+   311→            <Button size="sm" className="gap-1.5 bg-violet-500 text-white hover:bg-violet-600" onClick={seed} disabled={seeding}>
+   312→              {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} Generate demo traffic
+   313→            </Button>
+   314→          </div>
+   315→        ) : (
+   316→          <>
+   317→            {/* Stat cards */}
+   318→            <div className="lf-fade-up-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+   319→              <div style={{ animationDelay: "0ms" }}>
+   320→                <StatCard icon={BarChart3} label="Pageviews" value={fmtNum(stats!.pageviews)} />
+   321→              </div>
+   322→              <div style={{ animationDelay: "60ms" }}>
+   323→                <StatCard icon={Users} label="Unique visitors" value={fmtNum(stats!.uniqueVisitors)} />
+   324→              </div>
+   325→              <div style={{ animationDelay: "120ms" }}>
+   326→                <StatCard icon={TrendingDown} label="Bounce rate" value={`${Math.round(stats!.bounceRate * 100)}%`} />
+   327→              </div>
+   328→              <div style={{ animationDelay: "180ms" }}>
+   329→                <StatCard icon={Timer} label="Avg. duration" value={fmtDuration(stats!.avgDuration)} />
+   330→              </div>
+   331→              <div style={{ animationDelay: "240ms" }}>
+   332→                <StatCard icon={MousePointerClick} label="CTA clicks" value={fmtNum(stats!.ctaClicks)} />
+   333→              </div>
+   334→              <div style={{ animationDelay: "300ms" }}>
+   335→                <StatCard icon={Sparkles} label="Conversion" value={`${(stats!.conversionRate * 100).toFixed(1)}%`} hint="clicks / pageviews" />
+   336→              </div>
+   337→            </div>
+   338→
+   339→            {/* Traffic chart */}
+   340→            <div className="lf-fade-up" style={{ animationDelay: "340ms" }}>
+   341→              <PanelCard title={`Traffic — last ${days} days`} icon={BarChart3}>
+   342→                <div className="h-56">
+   343→                  <ResponsiveContainer width="100%" height="100%">
+   344→                    <AreaChart data={data!.timeseries} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+   345→                      <defs>
+   346→                        <linearGradient id="lfViews" x1="0" y1="0" x2="0" y2="1">
+   347→                          <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
+   348→                          <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
+   349→                        </linearGradient>
+   350→                        <linearGradient id="lfClicks" x1="0" y1="0" x2="0" y2="1">
+   351→                          <stop offset="0%" stopColor={GREEN} stopOpacity={0.3} />
+   352→                          <stop offset="100%" stopColor={GREEN} stopOpacity={0.02} />
+   353→                        </linearGradient>
+   354→                      </defs>
+   355→                      <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+   356→                      <XAxis
+   357→                        dataKey="date"
+   358→                        tick={{ fill: "#71717a", fontSize: 10 }}
+   359→                        tickFormatter={(d: string) => d.slice(5)}
+   360→                        axisLine={{ stroke: "#3f3f46" }}
+   361→                        tickLine={false}
+   362→                        interval="preserveStartEnd"
+   363→                      />
+   364→                      <YAxis tick={{ fill: "#71717a", fontSize: 10 }} axisLine={false} tickLine={false} />
+   365→                      <Tooltip {...CHART_TOOLTIP} />
+   366→                      <Area type="monotone" dataKey="views" name="Pageviews" stroke={ACCENT} strokeWidth={2} fill="url(#lfViews)" />
+   367→                      <Area type="monotone" dataKey="clicks" name="CTA clicks" stroke={GREEN} strokeWidth={2} fill="url(#lfClicks)" />
+   368→                    </AreaChart>
+   369→                  </ResponsiveContainer>
+   370→                </div>
+   371→              </PanelCard>
+   372→            </div>
+   373→
+   374→            <div className="lf-fade-up-stagger grid gap-4 lg:grid-cols-3">
+   375→              {/* Devices */}
+   376→              <div style={{ animationDelay: "380ms" }}>
+   377→                <PanelCard title="Devices" icon={MonitorSmartphone}>
+   378→                  <div className="flex h-44 items-center">
+   379→                    <div className="h-full w-1/2">
+   380→                      <ResponsiveContainer width="100%" height="100%">
+   381→                        <PieChart>
+   382→                          <Pie data={data!.devices} dataKey="count" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={3} strokeWidth={0}>
+   383→                            {data!.devices.map((_, i) => (
+   384→                              <Cell key={i} fill={[ACCENT, ACCENT2, "#86198f"][i % 3]} />
+   385→                            ))}
+   386→                          </Pie>
+   387→                          <Tooltip {...CHART_TOOLTIP} />
+   388→                        </PieChart>
+   389→                      </ResponsiveContainer>
+   390→                    </div>
+   391→                    <ul className="w-1/2 space-y-1.5">
+   392→                      {data!.devices.map((d, i) => (
+   393→                        <li key={d.name} className="flex items-center gap-2 text-[12px] text-zinc-300">
+   394→                          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: [ACCENT, ACCENT2, "#86198f"][i % 3] }} />
+   395→                          <span className="flex-1 capitalize">{d.name}</span>
+   396→                          <span className="font-mono text-zinc-500">{Math.round((d.count / Math.max(1, stats!.pageviews)) * 100)}%</span>
+   397→                        </li>
+   398→                      ))}
+   399→                    </ul>
+   400→                  </div>
+   401→                </PanelCard>
+   402→              </div>
+   403→
+   404→              {/* Visitor countries */}
+   405→              <div style={{ animationDelay: "440ms" }}>
+   406→                <PanelCard title="Visitor map" icon={Globe2}>
+   407→                  <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+   408→                    {data!.countries.slice(0, 8).map((c) => {
+   409→                      const pct = (c.count / Math.max(1, stats!.pageviews)) * 100
+   410→                      return (
+   411→                        <li key={c.name} className="flex items-center gap-2">
+   412→                          <span className="w-6 text-center text-base leading-none">{countryFlag(c.name)}</span>
+   413→                          <div className="min-w-0 flex-1">
+   414→                            <div className="flex justify-between text-[11px]">
+   415→                              <span className="text-zinc-300">{c.name}</span>
+   416→                              <span className="font-mono text-zinc-500">{fmtNum(c.count)}</span>
+   417→                            </div>
+   418→                            <div className="h-1 overflow-hidden rounded-full bg-zinc-800">
+   419→                              <div className="h-full rounded-full bg-violet-400/70" style={{ width: `${pct}%` }} />
+   420→                            </div>
+   421→                          </div>
+   422→                        </li>
+   423→                      )
+   424→                    })}
+   425→                  </ul>
+   426→                </PanelCard>
+   427→              </div>
+   428→
+   429→              {/* Referrers */}
+   430→              <div style={{ animationDelay: "500ms" }}>
+   431→                <PanelCard title="Top referrers" icon={Globe2}>
+   432→                  <ul className="space-y-1.5">
+   433→                    {data!.referrers.slice(0, 7).map((r) => {
+   434→                      const pct = (r.count / Math.max(1, stats!.pageviews)) * 100
+   435→                      return (
+   436→                        <li key={r.name} className="flex items-center gap-2">
+   437→                          <span className="w-28 truncate font-mono text-[11px] text-zinc-400">{r.name}</span>
+   438→                          <div className="h-4 flex-1 overflow-hidden rounded bg-zinc-800">
+   439→                            <div className="flex h-full items-center justify-end rounded bg-gradient-to-r from-violet-500/40 to-fuchsia-500/60 pr-1.5" style={{ width: `${Math.max(12, pct)}%` }}>
+   440→                              <span className="text-[9px] font-semibold text-white/90">{fmtNum(r.count)}</span>
+   441→                            </div>
+   442→                          </div>
+   443→                        </li>
+   444→                      )
+   445→                    })}
+   446→                  </ul>
+   447→                </PanelCard>
+   448→              </div>
+   449→            </div>
+   450→
+   451→            <div className="lf-fade-up-stagger grid gap-4 lg:grid-cols-2">
+   452→              {/* Funnel */}
+   453→              <div style={{ animationDelay: "560ms" }}>
+   454→                <PanelCard title="Conversion funnel" icon={MousePointerClick}>
+   455→                  <ul className="space-y-3">
+   456→                    {data!.funnel.map((f, i) => (
+   457→                      <li key={f.label}>
+   458→                        <div className="mb-1 flex justify-between text-[11px]">
+   459→                          <span className="text-zinc-300" title={i === 1 ? "Counts each section interaction — can exceed pageviews by design" : undefined}>
+   460→                            {i + 1}. {f.label}
+   461→                            {i === 1 && <span className="ml-1 text-[9px] text-zinc-600">(interactions)</span>}
+   462→                          </span>
+   463→                          <span className="font-mono text-zinc-400">
+   464→                            {fmtNum(f.count)} · {Math.round((f.count / funnelMax) * 100)}%
+   465→                          </span>
+   466→                        </div>
+   467→                        <div className="h-6 overflow-hidden rounded-md bg-zinc-800/60">
+   468→                          <div
+   469→                            className="flex h-full items-center rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500/80 px-2 transition-all"
+   470→                            style={{ width: `${Math.max(3, (f.count / funnelMax) * 100)}%` }}
+   471→                          />
+   472→                        </div>
+   473→                      </li>
+   474→                    ))}
+   475→                  </ul>
+   476→                </PanelCard>
+   477→              </div>
+   478→
+   479→              {/* A/B test */}
+   480→              <div style={{ animationDelay: "620ms" }}>
+   481→                <PanelCard
+   482→                  title="A/B test — hero"
+   483→                  icon={Sparkles}
+   484→                  actions={
+   485→                    data!.ab?.winner ? (
+   486→                      <Button size="sm" className="h-6 gap-1 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[10px] text-white hover:from-violet-600 hover:to-fuchsia-600 lf-glow" onClick={promoteWinner}>
+   487→                        <Crown className="h-3 w-3" /> Promote {data!.ab.winner}
+   488→                      </Button>
+   489→                    ) : undefined
+   490→                  }
+   491→                >
+   492→                  {data!.ab?.enabled ? (
+   493→                    <div className="space-y-3">
+   494→                      {data!.ab.winner && (
+   495→                        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+   496→                          <Crown className="h-3.5 w-3.5" />
+   497→                          Variant <b>{data!.ab.winner}</b> is winning (sample {fmtNum(data!.ab.totalExposures)} / {fmtNum(data!.ab.sampleSize)} reached) — auto-winner {data!.ab.autoWinner ? "ON" : "OFF"}
+   498→                        </div>
+   499→                      )}
+   500→                      {!data!.ab.hasData && <p className="text-[11px] text-zinc-500">No exposures recorded yet — use “Test preview” with a variant selected, or simulate traffic.</p>}
+   501→                      {data!.ab.variants.map((v) => (
+   502→                        <div key={v.name} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+   503→                          <div className="flex items-center gap-2">
+   504→                            <span className={cn("flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold", v.name === data!.ab!.winner ? "bg-amber-400 text-black" : "bg-violet-500/20 text-violet-200")}>{v.name}</span>
+   505→                            <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-300">{v.headline}</span>
+   506→                            <span className="font-mono text-[10px] text-zinc-500">w {v.weight}%</span>
+   507→                          </div>
+   508→                          <div className="mt-2 flex items-center gap-2">
+   509→                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+   510→                              <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300" style={{ width: `${Math.round(v.ctr * 100)}%` }} />
+   511→                            </div>
+   512→                            <span className="w-24 text-right font-mono text-[10px] text-zinc-400">
+   513→                              CTR {(v.ctr * 100).toFixed(1)}% · {v.clicks}/{v.exposures}
+   514→                            </span>
+   515→                          </div>
+   516→                        </div>
+   517→                      ))}
+   518→                    </div>
+   519→                  ) : (
+   520→                    <div className="flex flex-col items-center gap-2 py-6 text-center">
+   521→                      <Sparkles className="h-6 w-6 text-zinc-700" />
+   522→                      <p className="text-[12px] text-zinc-500">No A/B test running.</p>
+   523→                      <p className="max-w-xs text-[10px] text-zinc-600">Enable “A/B test this hero” in the hero section properties (Studio → Section tab) to compare weighted headline variants.</p>
+   524→                    </div>
+   525→                  )}
+   526→                </PanelCard>
+   527→              </div>
+   528→            </div>
+   529→
+   530→            {/* Leads inbox — contact form submissions */}
+   531→            <div className="lf-fade-up" style={{ animationDelay: "640ms" }}>
+   532→              <PanelCard
+   533→                title="Leads inbox"
+   534→                icon={Mail}
+   535→                actions={
+   536→                  <div className="flex items-center gap-2">
+   537→                    {leads.length > 0 && (
+   538→                      <button
+   539→                        type="button"
+   540→                        onClick={() => {
+   541→                          downloadLeadsCsv(leads, projectName || "project")
+   542→                          toast.success("Leads CSV exported 📄", { description: `${leads.length} submissions — one row each, all fields included.` })
+   543→                        }}
+   544→                        className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-1 text-[10px] font-semibold text-zinc-400 transition-colors hover:border-violet-500/40 hover:text-zinc-200"
+   545→                        title="Export all submissions as CSV (spreadsheet-ready)"
+   546→                      >
+   547→                        <Download className="h-3 w-3" /> CSV
+   548→                      </button>
+   549→                    )}
+   550→                    <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-violet-300">
+   551→                      {leads.length} {leads.length === 1 ? "submission" : "submissions"}
+   552→                    </span>
+   553→                  </div>
+   554→                }
+   555→              >
+   556→                {leads.length === 0 ? (
+   557→                  <div className="flex flex-col items-center gap-2 py-8 text-center">
+   558→                    <Mail className="h-6 w-6 text-zinc-700" />
+   559→                    <p className="text-[12px] text-zinc-500">No form submissions yet.</p>
+   560→                    <p className="max-w-xs text-[10px] text-zinc-600">
+   561→                      Open “Test preview” in the Studio and submit the contact form — every submission lands here as a lead.
+   562→                    </p>
+   563→                  </div>
+   564→                ) : (
+   565→                  <ul className="grid max-h-96 gap-2 overflow-y-auto lf-scroll pr-1 sm:grid-cols-2">
+   566→                    {leads.map((lead) => {
+   567→                      const initials = (lead.name || lead.email || "?")
+   568→                        .split(/[\s.@]+/)
+   569→                        .filter(Boolean)
+   570→                        .slice(0, 2)
+   571→                        .map((w) => w[0]?.toUpperCase())
+   572→                        .join("")
+   573→                      const hue = (lead.id.charCodeAt(0) * 13) % 360
+   574→                      return (
+   575→                        <li
+   576→                          key={lead.id}
+   577→                          className="group"
+   578→                        >
+   579→                          <button
+   580→                            type="button"
+   581→                            onClick={() => setSelectedLead(lead)}
+   582→                            className="flex w-full items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-left transition-all hover:border-violet-500/30 hover:bg-zinc-900/80 hover:shadow-md hover:shadow-violet-950/20"
+   583→                            aria-label={`Open lead details for ${lead.name || lead.email || "anonymous submission"}`}
+   584→                            title="Open full submission details"
+   585→                          >
+   586→                          <span
+   587→                            className="flex size-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-[11px] font-bold text-zinc-100"
+   588→                            style={{ background: `hsl(${hue} 45% 22%)` }}
+   589→                          >
+   590→                            {initials}
+   591→                          </span>
+   592→                          <div className="min-w-0 flex-1">
+   593→                            <div className="flex items-baseline gap-2">
+   594→                              <p className="truncate text-[12px] font-semibold text-zinc-100">{lead.name || "Anonymous"}</p>
+   595→                              <span className="ml-auto shrink-0 font-mono text-[9px] text-zinc-600">
+   596→                                {new Date(lead.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+   597→                              </span>
+   598→                            </div>
+   599→                            {lead.email && (
+   600→                              <a
+   601→                                href={`mailto:${lead.email}`}
+   602→                                className="mt-0.5 block truncate text-[11px] text-violet-300/90 underline-offset-2 hover:underline"
+   603→                                title={`Email ${lead.email}`}
+   604→                                onClick={(e) => e.stopPropagation()}
+   605→                              >
+   606→                                {lead.email}
+   607→                              </a>
+   608→                            )}
+   609→                            {lead.message && (
+   610→                              <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-zinc-400" title={lead.message}>
+   611→                                {lead.message}
+   612→                              </p>
+   613→                            )}
+   614→                            <span className="mt-1.5 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-violet-400/0 transition-colors group-hover:text-violet-400/70">
+   615→                              View details →
+   616→                            </span>
+   617→                          </div>
+   618→                          </button>
+   619→                        </li>
+   620→                      )
+   621→                    })}
+   622→                  </ul>
+   623→                )}
+   624→              </PanelCard>
+   625→            </div>
+   626→
+   627→            {/* Recent events */}
+   628→            <div className="lf-fade-up" style={{ animationDelay: "680ms" }}>
+   629→              <PanelCard title="Recent events" icon={Zap}>
+   630→                <ul className="divide-y divide-zinc-800/60">
+   631→                  {data!.recentEvents.map((e) => (
+   632→                    <li key={e.id} className="flex items-center gap-3 py-1.5 text-[11px]">
+   633→                      <span
+   634→                        className={cn(
+   635→                          "rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase",
+   636→                          e.type === "cta_click" ? "bg-emerald-500/15 text-emerald-300" : e.type === "form_submit" ? "bg-fuchsia-500/15 text-fuchsia-300" : e.type === "variant_exposure" ? "bg-violet-500/15 text-violet-300" : "bg-zinc-500/15 text-zinc-400"
+   637→                        )}
+   638→                      >
+   639→                        {e.type.replace("_", " ")}
+   640→                      </span>
+   641→                      <span className="min-w-0 flex-1 truncate text-zinc-300">{e.label}</span>
+   642→                      {e.variant && <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[9px] text-violet-300">v{e.variant}</span>}
+   643→                      <span className="font-mono text-zinc-600">{new Date(e.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+   644→                    </li>
+   645→                  ))}
+   646→                </ul>
+   647→              </PanelCard>
+   648→            </div>
+   649→          </>
+   650→        )}
+   651→      </div>
+   652→
+   653→      {/* Lead detail drawer — full submission + reply actions */}
+   654→      <LeadDetailSheet lead={selectedLead} open={selectedLead !== null} onOpenChange={(o) => !o && setSelectedLead(null)} />
+   655→    </div>
+   656→  )
+   657→}
+   658→

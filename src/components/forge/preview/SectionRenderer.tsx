@@ -18,6 +18,8 @@ import { Testimonials } from "./sections/Testimonials"
 export interface SectionRendererProps {
   section: Section
   brandName: string
+  /** brand logo URL (brand kit) — rendered by navbar & footer when present */
+  brandLogo?: string
   abOverride?: { headline: string; sub: string; ctaLabel: string } | null
   onCtaClick?: (section: Section, label: string) => void
   onFormSubmit?: (section: Section, data: Record<string, string>) => void
@@ -27,12 +29,12 @@ export interface SectionRendererProps {
  * Renders a single landing section by its discriminated `type`.
  * Hidden sections render nothing.
  */
-export function SectionRenderer({ section, brandName, abOverride, onCtaClick, onFormSubmit }: SectionRendererProps) {
+export function SectionRenderer({ section, brandName, brandLogo, abOverride, onCtaClick, onFormSubmit }: SectionRendererProps) {
   if (section.hidden) return null
 
   switch (section.type) {
     case "navbar":
-      return <Navbar section={section} brandName={brandName} onCtaClick={(label) => onCtaClick?.(section, label)} />
+      return <Navbar section={section} brandName={brandName} logoUrl={brandLogo} onCtaClick={(label) => onCtaClick?.(section, label)} />
     case "hero":
       return (
         <Hero
@@ -66,7 +68,7 @@ export function SectionRenderer({ section, brandName, abOverride, onCtaClick, on
     case "cta-final":
       return <CtaFinal section={section} onCtaClick={(label) => onCtaClick?.(section, label)} />
     case "footer":
-      return <Footer section={section} brandName={brandName} onCtaClick={(label) => onCtaClick?.(section, label)} />
+      return <Footer section={section} brandName={brandName} logoUrl={brandLogo} onCtaClick={(label) => onCtaClick?.(section, label)} />
     default:
       return null
   }

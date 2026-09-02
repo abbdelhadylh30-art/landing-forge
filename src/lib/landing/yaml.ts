@@ -1,5 +1,6 @@
 import { load as yamlLoad, dump as yamlDump } from "js-yaml"
 import { createSection, sid } from "./defaults"
+import { isValidAccent } from "./themes"
 import type { LandingConfig, Section, SectionType, ThemeId } from "./types"
 import { SECTION_TYPES } from "./types"
 
@@ -126,10 +127,23 @@ export function normalizeConfig(input: unknown): LandingConfig {
     sections.push(merged as unknown as Section)
   }
 
+  // sanitize custom anchors ([a-z0-9-] slugs — empty means "use the type default")
+  for (const s of sections) {
+    if (s.anchor == null) continue
+    const a = String(s.anchor).trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "")
+    if (a) s.anchor = a
+    else delete s.anchor
+  }
+
   const name = String(brand.name ?? "MyProduct").slice(0, 60) || "MyProduct"
+  const brandOut: LandingConfig["brand"] = { name, tagline: String(brand.tagline ?? "") }
+  const logoUrl = typeof brand.logoUrl === "string" ? brand.logoUrl.trim() : ""
+  if (logoUrl) brandOut.logoUrl = logoUrl
+  const accent = typeof brand.accent === "string" ? brand.accent.trim() : ""
+  if (isValidAccent(accent)) brandOut.accent = accent.startsWith("#") ? accent : `#${accent}`
   return {
     version: 1,
-    brand: { name, tagline: String(brand.tagline ?? "") },
+    brand: brandOut,
     themeId,
     seo: {
       title: String(seo.title ?? `${name} — Ship faster`).slice(0, 120),
@@ -178,6 +192,8 @@ export function configToYaml(config: LandingConfig): string {
     brand: {
       name: config.brand.name,
       tagline: config.brand.tagline || undefined,
+      logoUrl: config.brand.logoUrl || undefined,
+      accent: config.brand.accent || undefined,
     },
     theme: config.themeId,
     seo: { ...config.seo },

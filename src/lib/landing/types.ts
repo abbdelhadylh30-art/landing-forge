@@ -33,6 +33,7 @@ export interface NavbarSection {
   id: string
   type: "navbar"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   brandLabel?: string // override brand name
   links: { label: string; href: string }[]
   cta?: Cta
@@ -42,6 +43,7 @@ export interface HeroSection {
   id: string
   type: "hero"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   layout: "split-right" | "split-left" | "center" | "full-bleed"
   badge?: string
   headline: string
@@ -57,6 +59,7 @@ export interface LogosSection {
   id: string
   type: "logos"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   items: string[] // company names rendered as wordmark-styled text
 }
@@ -71,6 +74,7 @@ export interface FeaturesSection {
   id: string
   type: "features"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   subtitle?: string
   style: "grid" | "alternating" | "bento" | "tabs" | "carousel"
@@ -88,6 +92,7 @@ export interface StatsSection {
   id: string
   type: "stats"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   items: StatsItem[]
 }
@@ -104,6 +109,7 @@ export interface TestimonialsSection {
   id: string
   type: "testimonials"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   subtitle?: string
   style: "grid" | "marquee" | "spotlight" | "video" | "logo-wall"
@@ -124,6 +130,7 @@ export interface PricingSection {
   id: string
   type: "pricing"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   subtitle?: string
   annualToggle?: boolean
@@ -140,6 +147,7 @@ export interface FaqSection {
   id: string
   type: "faq"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   subtitle?: string
   style: "accordion" | "twocol"
@@ -157,6 +165,7 @@ export interface GallerySection {
   id: string
   type: "gallery"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   subtitle?: string
   style: "masonry" | "carousel"
@@ -167,6 +176,7 @@ export interface ContactSection {
   id: string
   type: "contact"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   title?: string
   subtitle?: string
   email?: string
@@ -179,6 +189,7 @@ export interface CtaFinalSection {
   id: string
   type: "cta-final"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   headline: string
   sub?: string
   cta: Cta
@@ -194,6 +205,7 @@ export interface FooterSection {
   id: string
   type: "footer"
   hidden?: boolean
+  anchor?: string // custom anchor id override (defaults to the section type)
   style: "minimal" | "mega" | "newsletter"
   tagline?: string
   linkGroups: FooterLinkGroup[]
@@ -253,6 +265,10 @@ export interface LandingConfig {
   brand: {
     name: string
     tagline?: string
+    /** brand logo shown in the navbar / footer (URL — upload, library or AI) */
+    logoUrl?: string
+    /** custom accent hex — overrides the theme's accent (and derived tints) */
+    accent?: string
   }
   themeId: ThemeId
   seo: {
@@ -336,6 +352,21 @@ export interface AbVariantResult {
   exposures: number
   clicks: number
   ctr: number // 0-1
+  avgDuration: number // seconds — mean time-on-page for visits exposed to this variant
+  engagedPct: number // 0-1 — share of exposed visits that engaged (≥15s or interacted)
+}
+
+/** An active visit on the published page ("who's here right now"). */
+export interface LiveVisit {
+  id: string
+  device: string
+  browser: string
+  country: string
+  referrer: string
+  variant: string | null
+  durationSec: number // live seconds-on-page (max of synced duration and elapsed)
+  startedAt: string // ISO
+  lastActive: string // ISO — last engagement signal (ping or arrival)
 }
 
 export interface AnalyticsPayload {
@@ -346,6 +377,12 @@ export interface AnalyticsPayload {
   referrers: NamedCount[]
   topSections: NamedCount[]
   funnel: FunnelStep[]
+  /** Visits on the published page within the last few minutes (always computed, not windowed by `days`). */
+  live: {
+    active: LiveVisit[] // still on the page (recent engagement signal)
+    last5m: number // total visits in the last 5 minutes
+    activeCount: number
+  }
   ab: {
     enabled: boolean
     metric: string

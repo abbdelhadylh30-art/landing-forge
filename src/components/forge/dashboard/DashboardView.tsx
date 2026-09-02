@@ -15,13 +15,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { BarChart3, Crown, Download, Globe2, Loader2, Mail, MonitorSmartphone, MousePointerClick, Pause, Radio, Sparkles, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
+import { BarChart3, Crown, Download, Globe2, Loader2, Mail, Monitor, MonitorSmartphone, MousePointerClick, Pause, Radio, Smartphone, Sparkles, Tablet, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
-import type { AnalyticsPayload, LeadRecord } from "@/lib/landing/types"
+import type { AnalyticsPayload, LeadRecord, LiveVisit } from "@/lib/landing/types"
 import { LeadDetailSheet, downloadLeadsCsv } from "./LeadDetailSheet"
 
 const ACCENT = "#A78BFA"
@@ -44,6 +44,19 @@ function fmtDuration(s: number): string {
   const m = Math.floor(s / 60)
   const sec = Math.round(s % 60)
   return m ? `${m}m ${sec}s` : `${sec}s`
+}
+
+function deviceIcon(d: string) {
+  if (d === "mobile") return Smartphone
+  if (d === "tablet") return Tablet
+  if (d === "desktop") return Monitor
+  return MonitorSmartphone
+}
+
+function fmtLiveTimer(s: number): string {
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return `${m}m ${String(s % 60).padStart(2, "0")}s`
 }
 
 function StatCard({ icon: Icon, label, value, delta, deltaUp, hint }: { icon: typeof Users; label: string; value: string; delta?: string; deltaUp?: boolean; hint?: string }) {
@@ -73,6 +86,112 @@ function PanelCard({ title, icon: Icon, children, actions }: { title: string; ic
         <div className="ml-auto">{actions}</div>
       </div>
       {children}
+    </div>
+  )
+}
+
+/** One active visit card — device, origin, variant, live-ticking timer. */
+function ActiveVisitCard({ visit, since }: { visit: LiveVisit; since: number }) {
+  const [, force] = React.useReducer((x: number) => x + 1, 0)
+  React.useEffect(() => {
+    const t = setInterval(force, 1000)
+    return () => clearInterval(t)
+  }, [])
+  const elapsed = Math.floor((Date.now() - since) / 1000) + visit.durationSec
+  const fresh = visit.durationSec < 15
+  const DeviceIcon = deviceIcon(visit.device)
+  return (
+    <div
+      className="group flex items-center gap-3 rounded-lg border border-emerald-500/15 bg-gradient-to-r from-emerald-500/[0.04] to-zinc-900/40 px-3 py-2.5 transition-colors hover:border-emerald-500/35"
+      title={`${visit.device} · ${visit.browser} · ${visit.country} · from ${visit.referrer} — on the page for ${fmtLiveTimer(elapsed)}`}
+    >
+      <span
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-lg border",
+          fresh ? "border-violet-500/40 bg-violet-500/10" : "border-zinc-700/80 bg-zinc-800/60"
+        )}
+        aria-hidden
+      >
+        <DeviceIcon className={cn("h-4 w-4", fresh ? "text-violet-300" : "text-zinc-300")} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-[11px] text-zinc-300">
+          <span className="text-sm leading-none" aria-hidden>{countryFlag(visit.country)}</span>
+          <span className="font-semibold">{visit.country}</span>
+          <span className="text-zinc-600">·</span>
+          <span className="truncate">{visit.browser}</span>
+          {visit.variant && (
+            <span className="rounded bg-violet-500/15 px-1 py-0.5 font-mono text-[9px] font-bold text-violet-300" title={`A/B variant ${visit.variant}`}>v{visit.variant}</span>
+          )}
+        </div>
+        <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">from {visit.referrer}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {fresh && (
+          <span className="rounded-full bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300">new</span>
+        )}
+        <span className="flex items-center gap-1 font-mono text-[11px] tabular-nums text-emerald-300" aria-label={`On the page for ${fmtLiveTimer(elapsed)}`}>
+          <span className="relative flex size-1.5" aria-hidden>
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+            <span className="relative inline-flex size-1.5 rounded-full bg-emerald-400" />
+          </span>
+          {fmtLiveTimer(elapsed)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/** "Right now" live-visitors strip — active visits on the published page. */
+function LiveVisitsPanel({ live, liveEnabled, slug }: { live: AnalyticsPayload["live"]; liveEnabled: boolean; slug: string }) {
+  // snapshot time when the payload identity changes — timers tick locally from
+  // the server-known duration, so they stay smooth between 5s polls
+  const [since, setSince] = React.useState(() => Date.now())
+  React.useEffect(() => {
+    setSince(Date.now())
+  }, [live])
+
+  const active = live.active
+  return (
+    <div className="lf-fade-up rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="relative flex size-2" aria-hidden>
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+          <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+        </span>
+        <h3 className="text-[13px] font-semibold text-zinc-100">Right now</h3>
+        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums", active.length ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "bg-zinc-800 text-zinc-500")}>
+          {active.length} {active.length === 1 ? "visitor" : "visitors"} on the page
+        </span>
+        <span className="rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-500 tabular-nums" title="Total visits in the last 5 minutes">
+          {live.last5m} in last 5m
+        </span>
+        <button
+          type="button"
+          className="ml-auto flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-1 text-[10px] font-semibold text-zinc-400 transition-colors hover:border-emerald-500/40 hover:text-emerald-200"
+          onClick={() => slug && window.open(`/?p=${encodeURIComponent(slug)}`, "_blank", "noopener")}
+          title="Open the published page — your own visit appears here within seconds"
+        >
+          <Globe2 className="h-3 w-3" /> Join live
+        </button>
+      </div>
+      {!liveEnabled ? (
+        <p className="py-3 text-center text-[11px] text-zinc-500">
+          Live refresh is paused — resume it to track active visitors in real time.
+        </p>
+      ) : active.length === 0 ? (
+        <div className="flex flex-col items-center gap-1.5 py-4 text-center">
+          <Radio className="h-5 w-5 text-zinc-700" aria-hidden />
+          <p className="text-[11px] text-zinc-500">No one is on the page right now.</p>
+          <p className="text-[10px] text-zinc-600">Open “Join live” — your visit shows up here within seconds and its timer runs live.</p>
+        </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {active.map((v) => (
+            <ActiveVisitCard key={v.id} visit={v} since={since} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -314,6 +433,9 @@ export function DashboardView() {
           </div>
         ) : (
           <>
+            {/* Live "right now" strip — active visits, ticking timers */}
+            <LiveVisitsPanel live={data!.live} liveEnabled={live} slug={slug} />
+
             {/* Stat cards */}
             <div className="lf-fade-up-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <div style={{ animationDelay: "0ms" }}>
@@ -498,14 +620,22 @@ export function DashboardView() {
                         </div>
                       )}
                       {!data!.ab.hasData && <p className="text-[11px] text-zinc-500">No exposures recorded yet — use “Test preview” with a variant selected, or simulate traffic.</p>}
-                      {data!.ab.variants.map((v) => (
-                        <div key={v.name} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+                      {data!.ab.variants.map((v) => {
+                        // engagement leader (only meaningful once some variant-tagged visits exist)
+                        const withEngagement = data!.ab!.variants.filter((x) => x.exposures > 0 && (x.avgDuration > 0 || x.engagedPct > 0))
+                        const engLeader = withEngagement.length >= 2 ? withEngagement.reduce((best, x) => (x.avgDuration > best.avgDuration ? x : best)) : null
+                        const isEngLeader = engLeader !== null && v.name === engLeader.name && v.avgDuration > 0
+                        return (
+                        <div key={v.name} className={cn("rounded-lg border p-3 transition-colors", v.name === data!.ab!.winner ? "border-amber-500/40 bg-amber-500/[0.04]" : "border-zinc-800 bg-zinc-900/50")}>
                           <div className="flex items-center gap-2">
                             <span className={cn("flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold", v.name === data!.ab!.winner ? "bg-amber-400 text-black" : "bg-violet-500/20 text-violet-200")}>{v.name}</span>
-                            <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-300">{v.headline}</span>
-                            <span className="font-mono text-[10px] text-zinc-500">w {v.weight}%</span>
+                            <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-300" title={v.headline}>{v.headline}</span>
+                            <span className="font-mono text-[10px] text-zinc-500" title="Traffic weight">w {v.weight}%</span>
                           </div>
-                          <div className="mt-2 flex items-center gap-2">
+
+                          {/* CTR row */}
+                          <div className="mt-2 flex items-center gap-2" title={`Clicks ${v.clicks} of ${v.exposures} exposures`}>
+                            <MousePointerClick className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
                             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
                               <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300" style={{ width: `${Math.round(v.ctr * 100)}%` }} />
                             </div>
@@ -513,14 +643,27 @@ export function DashboardView() {
                               CTR {(v.ctr * 100).toFixed(1)}% · {v.clicks}/{v.exposures}
                             </span>
                           </div>
+
+                          {/* Engagement row — avg duration + engaged share of variant-tagged visits */}
+                          <div className="mt-1.5 flex items-center gap-2" title={`Variant-tagged visits: avg ${fmtDuration(v.avgDuration)} on page · ${Math.round(v.engagedPct * 100)}% engaged`}>
+                            <Timer className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+                              <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" style={{ width: `${Math.round(v.engagedPct * 100)}%` }} />
+                            </div>
+                            <span className="flex w-24 items-center justify-end gap-1 font-mono text-[10px] text-zinc-400">
+                              {isEngLeader && <Crown className="h-2.5 w-2.5 text-amber-400" aria-label="Holds attention best" />}
+                              {fmtDuration(v.avgDuration)} · {Math.round(v.engagedPct * 100)}%
+                            </span>
+                          </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-2 py-6 text-center">
                       <Sparkles className="h-6 w-6 text-zinc-700" />
                       <p className="text-[12px] text-zinc-500">No A/B test running.</p>
-                      <p className="max-w-xs text-[10px] text-zinc-600">Enable “A/B test this hero” in the hero section properties (Studio → Section tab) to compare weighted headline variants.</p>
+                      <p className="max-w-xs text-[10px] text-zinc-600">Enable “A/B test this hero” in the hero section properties (Studio → Section tab) to compare headline variants — CTR, time-on-page and engagement per variant.</p>
                     </div>
                   )}
                 </PanelCard>

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronsUpDown, Eye, EyeOff, GripVertical, Images, Plus, Sparkles, Trash2, Copy, ArrowUp, ArrowDown } from "lucide-react"
+import { ChevronsUpDown, Eye, EyeOff, GripVertical, Hash, Images, Link2, Plus, Sparkles, Trash2, Upload, Copy, ArrowUp, ArrowDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
-import { THEMES } from "@/lib/landing/themes"
+import { ACCENT_PRESETS, THEMES, accentVars, getTheme, isValidAccent } from "@/lib/landing/themes"
 import { SECTION_META } from "@/lib/landing/types"
 import type {
   Cta,
@@ -36,24 +36,29 @@ import { ImageLibraryDialog } from "./ImageLibraryDialog"
 
 // ─── Field primitives ────────────────────────────────────────────────────────
 
-/** Image URL field with AI generation: prompt input + generate button + thumb. */
+/** Image URL field with AI generation + optional upload: prompt input, generate button, thumb. */
 function AiImageField({
   label,
   value,
   onChange,
   suggestion,
   size,
+  allowUpload,
 }: {
   label: string
   value?: string
   onChange: (src: string) => void
   suggestion: string
   size?: "1024x1024" | "768x1344" | "864x1152" | "1344x768" | "1152x864" | "1440x768" | "768x1440"
+  /** show an upload button (images land in the shared library) */
+  allowUpload?: boolean
 }) {
   const [prompt, setPrompt] = React.useState(suggestion)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState("")
   const [libraryOpen, setLibraryOpen] = React.useState(false)
+  const [uploading, setUploading] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   // keep the prompt in sync when the parent suggestion changes (item switch)
   React.useEffect(() => {
     setPrompt(suggestion)
@@ -80,6 +85,26 @@ function AiImageField({
     }
   }
 
+  const upload = async (file: File) => {
+    if (uploading) return
+    setUploading(true)
+    setError("")
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      const res = await fetch("/api/images", { method: "POST", body: fd })
+      const data = (await res.json()) as { url?: string; error?: string }
+      if (!res.ok || !data.url) throw new Error(data.error ?? "Upload failed")
+      onChange(data.url)
+      toast.success("Image uploaded ⬆", { description: "Saved to the library and applied here — undo if you change your mind." })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed")
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
   return (
     <Field label={label} hint={error || undefined}>
       <div className="flex gap-1.5">
@@ -99,6 +124,31 @@ function AiImageField({
         >
           <Images className="h-3.5 w-3.5" />
         </Button>
+        {allowUpload && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) void upload(f)
+              }}
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 shrink-0 border-zinc-700 text-zinc-400 hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-200"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="Upload an image file (PNG / JPG / WebP, ≤ 2MB)"
+              aria-label="Upload image"
+            >
+              {uploading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-300" /> : <Upload className="h-3.5 w-3.5" />}
+            </Button>
+          </>
+        )}
         <Button
           variant="outline"
           size="icon"
@@ -1006,6 +1056,158 @@ function SectionEditor({ section }: { section: Section }) {
   }
 }
 
+// ─── Brand kit (page tab) ─────────────────────────────────────────────────────
+
+/** Brand accent picker: presets, native color input, live CTA preview, reset. */
+function AccentPicker() {
+  const accent = useForge((s) => s.config.brand.accent)
+  const themeId = useForge((s) => s.config.themeId)
+  const updateBrand = useForge((s) => s.updateBrand)
+  const themeAccent = getTheme(themeId).vars.accent
+  const effective = accent || themeAccent
+  const preview = accentVars(effective)
+
+  const setAccent = (hex: string) => {
+    const v = hex.trim()
+    if (!v) {
+      updateBrand({ accent: undefined })
+      return
+    }
+    if (!isValidAccent(v)) return // invalid hex — keep current until it parses
+    updateBrand({ accent: v.startsWith("#") ? v : `#${v}` })
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Brand accent</Label>
+        {accent && (
+          <button
+            type="button"
+            className="ml-auto flex items-center gap-1 rounded-md border border-zinc-700 px-1.5 py-0.5 text-[9px] font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+            onClick={() => updateBrand({ accent: undefined })}
+            title={`Back to the ${getTheme(themeId).name} theme's built-in accent (${themeAccent})`}
+          >
+            <Trash2 className="h-2.5 w-2.5" /> Reset to theme
+          </button>
+        )}
+      </div>
+
+      {/* presets */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {ACCENT_PRESETS.map((p) => (
+          <button
+            key={p.hex}
+            type="button"
+            aria-label={`${p.name} accent`}
+            title={`${p.name} — ${p.hex}`}
+            onClick={() => updateBrand({ accent: p.hex })}
+            className={cn(
+              "size-6 rounded-full border transition-transform hover:scale-110",
+              accent?.toLowerCase() === p.hex.toLowerCase() ? "border-zinc-100 ring-2 ring-violet-500/70" : "border-zinc-700"
+            )}
+            style={{ background: p.hex }}
+          />
+        ))}
+        {/* native color picker */}
+        <label
+          className="relative flex h-6 cursor-pointer items-center gap-1 overflow-hidden rounded-md border border-dashed border-zinc-600 px-1.5 text-[9px] font-semibold text-zinc-400 transition-colors hover:border-violet-400 hover:text-violet-200"
+          title="Pick any color — contrast-safe text is computed automatically"
+        >
+          <span
+            aria-hidden
+            className="size-3.5 rounded-[4px] border border-white/20"
+            style={{ background: effective }}
+          />
+          Custom
+          <input
+            type="color"
+            value={/^#[0-9a-f]{6}$/i.test(effective) ? effective : "#a78bfa"}
+            onChange={(e) => setAccent(e.target.value)}
+            className="absolute inset-0 cursor-pointer opacity-0"
+            aria-label="Custom accent color"
+          />
+        </label>
+        {/* hex input */}
+        <Input
+          value={accent ?? ""}
+          onChange={(e) => setAccent(e.target.value)}
+          placeholder={`${themeAccent} (theme)`}
+          maxLength={7}
+          className="h-6 w-24 border-zinc-700/80 bg-zinc-900/60 font-mono text-[11px] text-zinc-200 focus-visible:ring-violet-500/60"
+          aria-label="Accent hex value"
+        />
+      </div>
+
+      {/* live CTA preview — shows buttons/chips exactly as the page will render them */}
+      <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Preview</span>
+        <span className="flex items-center gap-2">
+          {preview && (
+            <>
+              <span className="rounded-lg px-2.5 py-1 text-[11px] font-semibold" style={{ background: preview.accent, color: preview.accentText }}>
+                Get started
+              </span>
+              <span className="rounded-md px-1.5 py-0.5 text-[10px]" style={{ background: preview.accentSoft, color: preview.accent }}>
+                chip
+              </span>
+              <span className="h-4 w-1.5 rounded-sm" style={{ background: preview.accent }} aria-hidden />
+            </>
+          )}
+        </span>
+        <span className="ml-auto font-mono text-[9px] text-zinc-600">{effective}</span>
+      </div>
+      <p className="text-[10px] leading-tight text-zinc-500">
+        Overrides the theme's accent on buttons, links and highlights. Text contrast is computed automatically.
+      </p>
+    </div>
+  )
+}
+
+// ─── Anchor override (section tab) ───────────────────────────────────────────
+
+/** Per-section anchor id override — navbar/footer links like #<anchor> scroll here. */
+function AnchorField({ section }: { section: Section }) {
+  const update = useForge((s) => s.updateSection)
+  const value = section.anchor ?? ""
+  const onChange = (raw: string) => {
+    const slug = raw.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "")
+    update(section.id, ({ anchor: slug || undefined } as Partial<Section>))
+  }
+  const typeAnchor = section.type === "hero" ? "top" : section.type === "cta-final" ? "cta" : section.type
+  return (
+    <Field
+      label="Anchor link"
+      hint={value ? `Navbar links with href="#${value}" scroll to this section.` : `Auto — #${typeAnchor} (from the section type). Type to override.`}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="flex h-8 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/60 font-mono text-xs text-zinc-500" aria-hidden>
+          <Link2 className="h-3 w-3" />
+        </span>
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={typeAnchor}
+          maxLength={40}
+          className="h-8 border-zinc-700/80 bg-zinc-900/60 font-mono text-xs text-zinc-100 focus-visible:ring-violet-500/60"
+          aria-label="Custom anchor id for this section"
+        />
+        {value && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 shrink-0 px-2 text-[10px] text-zinc-500 hover:text-rose-300"
+            onClick={() => update(section.id, { anchor: undefined } as Partial<Section>)}
+            title="Back to the automatic anchor"
+          >
+            Auto
+          </Button>
+        )}
+      </div>
+    </Field>
+  )
+}
+
 // ─── Page settings tab ───────────────────────────────────────────────────────
 
 function PageSettings() {
@@ -1017,6 +1219,25 @@ function PageSettings() {
     <div className="space-y-5">
       <TextField label="Brand name" value={config.brand.name} onChange={(name) => updateBrand({ name })} maxLength={40} />
       <TextField label="Tagline" value={config.brand.tagline ?? ""} onChange={(tagline) => updateBrand({ tagline })} />
+
+      {/* Brand kit — logo + accent */}
+      <div className="space-y-4 rounded-xl border border-zinc-800/80 bg-gradient-to-b from-violet-500/[0.04] to-transparent p-3">
+        <div className="flex items-center gap-2">
+          <Hash className="h-3.5 w-3.5 text-violet-300" aria-hidden />
+          <p className="text-[11px] font-semibold text-zinc-200">Brand kit</p>
+          <span className="rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-violet-300">applies site-wide</span>
+        </div>
+        <AiImageField
+          label="Logo"
+          value={config.brand.logoUrl}
+          onChange={(logoUrl) => updateBrand({ logoUrl: logoUrl || undefined })}
+          suggestion={`minimal logo mark for "${config.brand.name}", flat vector style, simple geometric shapes, centered, clean background`}
+          size="1024x1024"
+          allowUpload
+        />
+        <AccentPicker />
+      </div>
+
       <TextField label="SEO title" value={config.seo.title} onChange={(title) => updateSeo({ title })} maxLength={70} hint={`${config.seo.title.length}/70 — shown in search results & link previews`} />
       <TextAreaField label="SEO description" value={config.seo.description} onChange={(description) => updateSeo({ description })} rows={3} maxLength={160} hint={`${config.seo.description.length}/160`} />
       <div className="space-y-2">
@@ -1098,6 +1319,10 @@ export function PropertiesPanel({ className }: { className?: string }) {
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-300">Hidden — not rendered in the live preview.</div>
               )}
               <SectionEditor section={selected} />
+              {/* shared: per-section anchor override (navbar/footer link target) */}
+              <div className="border-t border-zinc-800/70 pt-4">
+                <AnchorField section={selected} />
+              </div>
             </div>
           )}
         </TabsContent>

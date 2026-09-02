@@ -31,6 +31,7 @@ model PageView {
   country    String   @default("US")
   device     String   @default("desktop")
   browser    String   @default("Chrome")
+  variant    String? // A/B variant this visit was exposed to (per-variant engagement)
   duration   Int      @default(0) // seconds in page
   isBounce   Boolean  @default(false)
   createdAt  DateTime @default(now())

@@ -479,3 +479,74 @@ Next-phase priority order:
 3. **Anchor override field** in the properties panel (anchors are currently type-derived only).
 4. **Reusable brand kit** — logo upload + global brand color accent override per project.
 5. Smaller: seed script awareness of engagement data (seeded rows currently bounce-heavy), mobile toolbar compaction if 2 rows feel tight.
+
+---
+Task ID: R10
+Agent: main (Z.ai Code) — round 10
+Task: Assess status, QA via agent-browser (stable → no bugs), ship R9-handover priorities: live visitors strip, per-variant A/B engagement, brand kit (logo upload + accent), anchor override + styling polish
+
+Work Log:
+- QA baseline (agent-browser): STABLE — 0 page/console errors across studio, analytics, projects, published page; command palette, engagement pill (telemetry "27s ✓"), lint/tsc clean. No bugs found → proceeded to feature work per R9-handover priorities.
+- NEW FEATURE 1 — "Right now" live visitors strip (R9 priority #1):
+  - GET /api/analytics: new `live` block (always last-5-min window, not days-windowed) — active visits where the last engagement signal (createdAt + duration, pings land ~15s) is < 45s old; each LiveVisit {device, browser, country, referrer, variant, durationSec (max of synced duration & wall-clock elapsed), startedAt, lastActive}.
+  - DashboardView: LiveVisitsPanel at the top — pulse header, "N visitors on the page" + "M in last 5m" pills, Join-live button, per-visit cards (device icon tile, flag+country, browser, vB badge, referrer, live 1s-ticking timer with tabular-nums, "new" badge <15s, emerald ping dot). Timers tick locally from the payload snapshot (no parent re-renders; charts stay diff-stable). Empty + paused-Live states.
+  - VERIFIED end-to-end: open published page → dashboard strip shows the visit within one 5s poll (US · Chrome · vA · NEW 9s ticking), seed-wipe → re-visit → reappears.
+- NEW FEATURE 2 — per-variant A/B engagement (R9 priority #2):
+  - Schema: PageView.variant String? added (bun run db:push; dev server restarted once to reload the Prisma client after a stale-cache "Unknown field variant" error — known ops note).
+  - track API: pageview POST persists `variant`; PublishedPage assigns the variant BEFORE tracking the pageview so the visit record itself is tagged.
+  - Analytics API: ab.variants gain avgDuration + engagedPct aggregated from variant-tagged pageviews (windowed like the rest).
+  - Dashboard A/B cards: second metric row (Timer icon, violet→fuchsia engaged bar, "1m 39s · 72%"), amber Crown "Holds attention best" on the engagement leader, winner-tinted card border, tooltips, richer empty-state copy.
+  - Seed: variant decided BEFORE the view row (views variant-tagged), consistent engagement semantics (bounces 1–14s, engaged 15s+), winner biased +~45% duration / −⅓ bounce — the engagement story is visible after "Simulate traffic".
+  - VERIFIED: A: CTR 5.7% · 57s · 54% vs B: CTR 12.8% · 1m 39s · 72% 👑.
+- NEW FEATURE 3 — Brand kit (R9 priority #4):
+  - types: brand.logoUrl + brand.accent; themes.ts: accentVars() derives accentText (WCAG-ish luminance), accentSoft, border, gradient from one hex; themeStyle(themeId, accent) overrides the theme vars; ACCENT_PRESETS (7 swatches) + isValidAccent().
+  - POST /api/images: multipart upload (PNG/JPG/WebP ≤2MB, type+size guards, UUID filenames matching the URL whitelist) — VERIFIED (200 upload + 400 bad-type/oversize/no-form guards, in-use guard + library unchanged).
+  - PropertiesPanel Page tab: "Brand kit" card — Logo AiImageField (AI generate + library + NEW upload button) and AccentPicker (preset swatches, native color input, hex input, "Reset to theme", live CTA/chip/bar preview with auto-contrast text).
+  - Rendering: Navbar + all 3 Footer variants render the logo image (h-7, max-w-120, object-contain, onError hide) in place of the gradient mark; preview root applies the accent; standalone-HTML export inherits both automatically; export.css regenerated (max-w-[120px], object-contain included).
+  - YAML roundtrip: configToYaml/normalizeConfig carry logoUrl/accent (invalid hex dropped — VERIFIED via bun script incl. anchor).
+  - VERIFIED: real-click emerald → preview --lf-accent #34d399 + CTA rgb(52,211,153); persisted (DB), published page shows accent + logo in navbar/footer; reset restores theme accent. NOTE: eval-dispatched synthetic .click() does NOT trigger React handlers reliably — QA must use agent-browser real ref clicks (cost ~30min this round to diagnose).
+- NEW FEATURE 4 — Anchor override (R9 priority #3):
+  - All 12 section interfaces gain `anchor?: string`; LandingPreview anchorFor: custom slugified anchor wins over the type-derived id (still reserving the type slot); yaml normalize sanitizes/keeps anchors; shared AnchorField (Link2 icon, # prefix tile, Auto reset) rendered below every SectionEditor.
+  - VERIFIED: typed "why-us" → preview id="why-us" replaces id="features"; persisted to DB and present on the published page.
+- Styling polish: live strip + visit cards (emerald/violet), A/B winner tint + crowns + icon-led metric rows, brand-kit card with gradient wash, swatch ring states, panel CTA preview — all keyboard/aria-labelled (role=switch/titles/aria-labels).
+- Ops/demo state: dev server restarted once (Prisma client reload); "Simulate traffic" re-run (fresh variant-tagged data); test logo replaced with an AI-generated Bean Route logo (lf-afe0891503fd.png); accent/anchors reset to theme defaults for a pristine handover.
+- Final regression: fresh session 0 errors (studio/analytics/projects/published), mobile 390px no overflow, engagement pings PATCH 200, lint 0/0, tsc clean (app code), dev.log all 200s.
+
+Stage Summary:
+- The dashboard now answers "who's on my page right now" — a live, ticking visitors strip fed by the existing 5s polling, with variant badges and Join-live affordance.
+- A/B reporting went from CTR-only to full engagement: per-variant avg time-on-page + engaged share, with an auto-crowned attention winner and a seed story that demos it.
+- Brand kit closes the identity loop: logo (upload / library / AI) in navbar + footer, and one-hex accent theming with auto-contrast derivation applied across preview, published page and standalone HTML export.
+- Anchors are user-overridable per section with slug sanitation and YAML roundtrip.
+- All four R9-handover priorities shipped and verified end-to-end; no open bugs.
+
+---
+Task ID: R10-HANDOVER
+Agent: main (Z.ai Code)
+Task: Round 10 handover — status / goals / risks & next priorities
+
+## 1. Current project status assessment
+- **Stable and feature-complete for the R9 plan.** All four handover priorities shipped this round: live visitors strip, per-variant A/B engagement, brand kit (logo + accent), anchor override. Dev server healthy, `bun run lint` 0/0, `tsc --noEmit` clean (app code), 0 page/console errors on fresh sessions, dev.log all-200s.
+- Verified end-to-end with agent-browser: live visit appears in the strip within one 5s poll; A/B shows CTR + duration + engagement per variant with an attention crown; logo (AI-generated, in library) renders in navbar + footer on studio, published page and export; custom anchors persist and resolve.
+
+## 2. Current goals / completed modifications / verification results
+Goals: QA triage (stable, no bugs) → ship R9 priorities 1–4 with styling polish.
+- Live visitors: `live` block in /api/analytics (45s activity grace, last-5m window), LiveVisitsPanel with locally-ticking 1s timers (chart diff-stability preserved), device/flag/variant/referrer cards, new-badge, paused/empty states. VERIFIED cross-flow.
+- A/B engagement: PageView.variant column (db:push'd), variant assigned pre-pageview in PublishedPage, avgDuration/engagedPct per variant in the API, richer dashboard cards, seed generates the story (winner +45% duration, −⅓ bounce, bounces are short). VERIFIED after Simulate traffic.
+- Brand kit: accentVars() derivation (luminance contrast, soft/border/gradient tints), themeStyle(themeId, accent), POST /api/images upload (≤2MB, type guard), AiImageField allowUpload, AccentPicker (presets/native/hex/reset/live preview), navbar+footer logo rendering, YAML roundtrip, export.css regenerated. VERIFIED incl. API guards and published page.
+- Anchors: `anchor?: string` on all sections, slugified override in LandingPreview, AnchorField under every section editor, YAML sanitation. VERIFIED (why-us example, persisted).
+
+## 3. Unresolved issues / risks + next-phase priorities
+Known limitations / risks:
+- Live-visit activity heuristic (createdAt + duration, 45s grace) can lag background-throttled tabs; acceptable at demo scale (push/WebSocket is the eventual fix).
+- Per-variant engagement only counts visits recorded AFTER the variant column existed — old rows are untagged (seed regenerates them; historical dashboards will show 0s until re-seeded).
+- Image usedBy scan is substring-based (a logo URL in any text field counts as usage — errs safe).
+- Brand accent is one hex (bg/surface/text still theme-owned) — intentional scope.
+- QA methodology note: eval-dispatched synthetic clicks don't trigger React handlers reliably; use agent-browser ref clicks (real pointer events) for UI assertions.
+- Navbar brand `href="#"` scrolls to top rather than #top hero anchor (pre-existing, minor).
+
+Next-phase priority order:
+1. **Live overlay push** — upgrade the 5s polling to a WebSocket mini-service (port 303x) so active visits and events stream in without polling; dashboard already structurally ready (diff-based updates).
+2. **Section-level A/B** — extend variant tagging beyond the hero (per-section variant configs) using the same PageView.variant plumbing.
+3. **Brand kit depth** — custom fonts (2–3 curated pairs) + logo size/position controls in the navbar; readiness audit checks for logo/brand consistency.
+4. **Anchor UX** — readiness "broken link" detection for hrefs that match no section anchor + palette command "Copy anchor link".
+5. Smaller: seed script option to keep historical rows (append instead of wipe), CSV export including variant column, mobile toolbar compaction if 2 rows feel tight.

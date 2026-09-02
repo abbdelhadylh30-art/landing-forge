@@ -12,10 +12,12 @@ import { CONTAINER } from "../shared"
 export interface NavbarProps {
   section: NavbarSection
   brandName: string
+  /** brand logo URL (brand kit) — replaces the gradient mark when present */
+  logoUrl?: string
   onCtaClick?: (label: string) => void
 }
 
-export function Navbar({ section, brandName, onCtaClick }: NavbarProps) {
+export function Navbar({ section, brandName, logoUrl, onCtaClick }: NavbarProps) {
   const [open, setOpen] = useState(false)
   const brand = section.brandLabel?.trim() || brandName
   const links = section.links ?? []
@@ -32,9 +34,20 @@ export function Navbar({ section, brandName, onCtaClick }: NavbarProps) {
       }}
     >
       <div className={cn(CONTAINER, "flex h-14 items-center justify-between gap-4")}>
-        {/* brand */}
+        {/* brand — logo image (brand kit) or gradient mark fallback */}
         <a href="#" className="flex items-center gap-2.5" style={{ color: "var(--lf-text)" }}>
-          <span aria-hidden className="size-7 rounded-lg" style={{ background: "var(--lf-gradient)" }} />
+          {logoUrl ? (
+                <img
+              src={logoUrl}
+              alt={`${brand} logo`}
+              className="h-7 w-auto max-w-[120px] rounded-md object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = "none"
+              }}
+            />
+          ) : (
+            <span aria-hidden className="size-7 rounded-lg" style={{ background: "var(--lf-gradient)" }} />
+          )}
           <span className="text-[15px] font-bold tracking-tight">{brand}</span>
         </a>
 

@@ -3,14 +3,19 @@
 //
 // GET /api/analytics?projectId=xxx&days=30 → 200 AnalyticsPayload | 400 | 404
 //   All metrics are windowed to the last `days` days (1–90, default 30,
-//   local midnights, today included). Response = AnalyticsPayload (see types.ts):
+//   local midnights, today included) — except `live`, which always covers the
+//   last 5 minutes. Response = AnalyticsPayload (see types.ts):
 //   { stats, timeseries, devices, countries, referrers, topSections, funnel,
-//     ab, recentEvents }
+//     live, ab, recentEvents }
+//   live: active visits ("who's on the page right now") — a visit stays active
+//     for 45s after its last engagement signal (pings land every ~15s)
+//   ab: per-variant exposures/clicks/CTR plus avgDuration + engagedPct from
+//     variant-tagged pageviews
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { guard, HttpError, parseStoredConfig } from "@/lib/landing/server"
-import type { AnalyticsPayload, HeroSection } from "@/lib/landing/types"
+import type { AnalyticsPayload, HeroSection, LiveVisit } from "@/lib/landing/types"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -21,6 +26,11 @@ function dayKey(d: Date): string {
   const day = String(d.getDate()).padStart(2, "0")
   return `${y}-${m}-${day}`
 }
+
+/** A visit counts as "on the page right now" if its last engagement signal
+ *  (ping or arrival) is this fresh — pings land every ~15s while visible. */
+const ACTIVE_GRACE_MS = 45_000
+const LIVE_WINDOW_MS = 5 * 60_000
 
 export async function GET(req: NextRequest) {
   return guard(async () => {
@@ -37,11 +47,11 @@ export async function GET(req: NextRequest) {
     start.setHours(0, 0, 0, 0)
     start.setDate(start.getDate() - (days - 1))
 
-    const [views, events, deviceGroups, countryGroups, referrerGroups, sectionGroups, recent] =
+    const [views, events, deviceGroups, countryGroups, referrerGroups, sectionGroups, recent, recentVisits] =
       await Promise.all([
         db.pageView.findMany({
           where: { projectId, createdAt: { gte: start } },
-          select: { visitorId: true, duration: true, isBounce: true, createdAt: true },
+          select: { visitorId: true, variant: true, duration: true, isBounce: true, createdAt: true },
         }),
         db.event.findMany({
           where: { projectId, createdAt: { gte: start } },
@@ -56,6 +66,13 @@ export async function GET(req: NextRequest) {
           orderBy: { createdAt: "desc" },
           take: 12,
           select: { id: true, type: true, label: true, variant: true, createdAt: true },
+        }),
+        // recent visits for the live "right now" strip (not windowed by `days`)
+        db.pageView.findMany({
+          where: { projectId, createdAt: { gte: new Date(Date.now() - LIVE_WINDOW_MS) } },
+          orderBy: { createdAt: "desc" },
+          take: 30,
+          select: { id: true, device: true, browser: true, country: true, referrer: true, variant: true, duration: true, createdAt: true },
         }),
       ])
 
@@ -104,12 +121,50 @@ export async function GET(req: NextRequest) {
       { label: "Submitted form", count: countType("form_submit") },
     ]
 
+    // ── live "right now" strip ───────────────────────────────────────────────
+    // lastActive ≈ createdAt + duration (pings grow duration while visible);
+    // a visit is active while that signal is within the grace window.
+    const now = Date.now()
+    const activeVisits: LiveVisit[] = []
+    for (const v of recentVisits) {
+      const created = v.createdAt.getTime()
+      const lastActive = created + v.duration * 1000
+      if (now - lastActive > ACTIVE_GRACE_MS) continue
+      activeVisits.push({
+        id: v.id,
+        device: v.device,
+        browser: v.browser,
+        country: v.country,
+        referrer: v.referrer,
+        variant: v.variant,
+        // while active, wall-clock elapsed is the truth (pings lag up to 15s)
+        durationSec: Math.max(v.duration, Math.floor((now - created) / 1000)),
+        startedAt: v.createdAt.toISOString(),
+        lastActive: new Date(lastActive).toISOString(),
+      })
+    }
+    const live = {
+      active: activeVisits.sort((a, b) => b.durationSec - a.durationSec),
+      last5m: recentVisits.length,
+      activeCount: activeVisits.length,
+    }
+
     // ── A/B block (first enabled hero ab) ────────────────────────────────────
     const config = parseStoredConfig(project.config)
     const hero = config.sections.find((s): s is HeroSection => s.type === "hero" && s.ab?.enabled === true)
     const abCfg = hero?.ab
     let ab: AnalyticsPayload["ab"] = null
     if (abCfg) {
+      // per-variant engagement from variant-tagged pageviews
+      const pvByVariant = new Map<string, { total: number; duration: number; engaged: number }>()
+      for (const v of views) {
+        if (!v.variant) continue
+        const agg = pvByVariant.get(v.variant) ?? { total: 0, duration: 0, engaged: 0 }
+        agg.total++
+        agg.duration += v.duration
+        if (!v.isBounce) agg.engaged++
+        pvByVariant.set(v.variant, agg)
+      }
       const exposuresBy = new Map<string, number>()
       const clicksBy = new Map<string, number>()
       for (const e of events) {
@@ -123,6 +178,7 @@ export async function GET(req: NextRequest) {
       const variants = abCfg.variants.map((v) => {
         const exposures = exposuresBy.get(v.name) ?? 0
         const clicks = clicksBy.get(v.name) ?? 0
+        const pv = pvByVariant.get(v.name)
         return {
           name: v.name,
           headline: v.headline,
@@ -130,6 +186,8 @@ export async function GET(req: NextRequest) {
           exposures,
           clicks,
           ctr: exposures > 0 ? clicks / exposures : 0,
+          avgDuration: pv && pv.total > 0 ? Math.round(pv.duration / pv.total) : 0,
+          engagedPct: pv && pv.total > 0 ? pv.engaged / pv.total : 0,
         }
       })
       const totalExposures = variants.reduce((s, v) => s + v.exposures, 0)
@@ -158,6 +216,7 @@ export async function GET(req: NextRequest) {
       referrers,
       topSections,
       funnel,
+      live,
       ab,
       recentEvents: recent.map((e) => ({
         id: e.id,

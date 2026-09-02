@@ -102,30 +102,34 @@ export function PublishedPage({ slug }: { slug: string }) {
   }, [slug])
 
   // ── Visitor tracking: pageview + A/B exposure, once per visit
+  // The variant is assigned BEFORE the pageview so the visit record itself is
+  // variant-tagged (powers per-variant duration/engagement in analytics).
   React.useEffect(() => {
     if (state.kind !== "ready" || trackedOnceRef.current) return
     trackedOnceRef.current = true
     const { id, config } = state.project
+
+    const hero = config.sections.find((s): s is HeroSection => s.type === "hero" && s.ab?.enabled === true)
+    const assigned = hero ? assignVariant(hero, id) : null
+    if (assigned) {
+      setVariant(assigned)
+      void track(id, { type: "variant_exposure", variant: assigned, label: "hero", path: `/${slug}` })
+      setEvents((n) => n + 1)
+    }
+
     void track(id, {
       type: "pageview",
       path: `/${slug}`,
       device: detectDevice(),
       browser: detectBrowser(),
       visitorId: getVisitorId(),
+      variant: assigned ?? undefined,
       duration: 0,
       isBounce: true, // provisional bounce — engagement pings de-bounce this visit
     }).then((pageviewId) => {
       pageviewIdRef.current = pageviewId
     })
     setEvents((n) => n + 1)
-
-    const hero = config.sections.find((s): s is HeroSection => s.type === "hero" && s.ab?.enabled === true)
-    if (hero) {
-      const assigned = assignVariant(hero, id)
-      setVariant(assigned)
-      void track(id, { type: "variant_exposure", variant: assigned, label: "hero", path: `/${slug}` })
-      setEvents((n) => n + 1)
-    }
   }, [state, slug])
 
   // ── Engagement pings: real time-on-page + bounce updates ─────────────────

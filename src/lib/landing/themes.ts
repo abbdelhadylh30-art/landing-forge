@@ -135,21 +135,83 @@ export function getTheme(id: ThemeId): ThemeDef {
   return THEMES.find((t) => t.id === id) ?? THEMES[0]
 }
 
-/** style object with CSS vars for a theme, spread onto the preview root element */
-export function themeStyle(id: ThemeId): React.CSSProperties {
-  const t = getTheme(id)
+// ── Custom accent derivation (brand kit) ────────────────────────────────────
+
+export const ACCENT_PRESETS: { hex: string; name: string }[] = [
+  { hex: "#A78BFA", name: "Violet" },
+  { hex: "#fb923c", name: "Amber" },
+  { hex: "#34d399", name: "Emerald" },
+  { hex: "#fb7185", name: "Rosé" },
+  { hex: "#facc15", name: "Gold" },
+  { hex: "#22d3ee", name: "Cyan" },
+  { hex: "#f472b6", name: "Pink" },
+]
+
+/** "#a78bfa" | "#A78BFA" | "a78bfa" → {r,g,b}; null when unparsable. */
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return null
+  const n = parseInt(m[1], 16)
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+}
+
+/** WCAG-ish relative luminance (0–1). */
+function luminance({ r, g, b }: { r: number; g: number; b: number }): number {
+  const srgb = [r, g, b].map((c) => {
+    const v = c / 255
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+  })
+  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2]
+}
+
+/** mix a hex color toward white by ratio (0–1) */
+function mixWhite(hex: string, ratio: number): string {
+  const c = hexToRgb(hex)
+  if (!c) return hex
+  const ch = (v: number) => Math.round(v + (255 - v) * ratio)
+  return `#${[ch(c.r), ch(c.g), ch(c.b)].map((v) => v.toString(16).padStart(2, "0")).join("")}`
+}
+
+/** Validate a user-provided accent color (6-digit hex). */
+export function isValidAccent(hex: string | undefined): hex is string {
+  return !!hex && /^#?[0-9a-f]{6}$/i.test(hex.trim())
+}
+
+/**
+ * Derive the full accent variable set from one brand hex: the accent itself,
+ * a contrast-safe accent text color, translucent soft/border tints and a
+ * gradient. Returns null if the hex is invalid (caller keeps theme defaults).
+ */
+export function accentVars(hex: string): Partial<ThemeDef["vars"]> | null {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return null
+  const dark = luminance(rgb) < 0.35
   return {
-    ["--lf-bg" as string]: t.vars.bg,
-    ["--lf-bg-alt" as string]: t.vars.bgAlt,
-    ["--lf-surface" as string]: t.vars.surface,
-    ["--lf-text" as string]: t.vars.text,
-    ["--lf-muted" as string]: t.vars.textMuted,
-    ["--lf-accent" as string]: t.vars.accent,
-    ["--lf-accent-contrast" as string]: t.vars.accentText,
-    ["--lf-accent-soft" as string]: t.vars.accentSoft,
-    ["--lf-border" as string]: t.vars.border,
-    ["--lf-gradient" as string]: t.vars.gradient,
-    background: t.vars.bg,
-    color: t.vars.text,
+    accent: hex,
+    accentText: dark ? "#fafafa" : "#1a1523",
+    accentSoft: `rgba(${rgb.r},${rgb.g},${rgb.b},0.14)`,
+    border: `rgba(${rgb.r},${rgb.g},${rgb.b},0.24)`,
+    gradient: `linear-gradient(135deg, ${hex} 0%, ${mixWhite(hex, 0.35)} 100%)`,
+  }
+}
+
+/** style object with CSS vars for a theme, spread onto the preview root element.
+ *  A valid `accent` hex (brand kit) overrides the theme's accent + derived tints. */
+export function themeStyle(id: ThemeId, accent?: string): React.CSSProperties {
+  const t = getTheme(id)
+  const vars = accent ? { ...t.vars, ...(accentVars(accent) ?? {}) } : t.vars
+  return {
+    ["--lf-bg" as string]: vars.bg,
+    ["--lf-bg-alt" as string]: vars.bgAlt,
+    ["--lf-surface" as string]: vars.surface,
+    ["--lf-text" as string]: vars.text,
+    ["--lf-muted" as string]: vars.textMuted,
+    ["--lf-accent" as string]: vars.accent,
+    ["--lf-accent-contrast" as string]: vars.accentText,
+    ["--lf-accent-soft" as string]: vars.accentSoft,
+    ["--lf-border" as string]: vars.border,
+    ["--lf-gradient" as string]: vars.gradient,
+    background: vars.bg,
+    color: vars.text,
   }
 }
