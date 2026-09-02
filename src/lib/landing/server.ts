@@ -106,3 +106,26 @@ export async function uniqueSlug(name: string): Promise<string> {
   }
   return `${base}-${Date.now().toString(36)}`
 }
+
+// ── live relay ingest (mini-services/analytics-live) ─────────────────────────
+// Fire-and-forget forward of durable tracking records to the socket relay so
+// connected dashboards update instantly. NEVER blocks or breaks the response —
+// the relay is an optional accelerator, REST polling remains the backstop.
+
+const RELAY_INGEST_URL = "http://127.0.0.1:3004/ingest"
+
+export type RelayIngest =
+  | ({ kind: "pageview"; projectId: string; id: string; device?: string; browser?: string; country?: string; referrer?: string; variant?: string })
+  | ({ kind: "engagement"; projectId: string; id: string; duration?: number; engaged?: boolean })
+  | ({ kind: "event"; projectId: string; type: string; label?: string; variant?: string })
+
+/** Notify the live relay of a durable record. Silent on every failure path. */
+export function notifyLive(payload: RelayIngest): void {
+  if (!payload.projectId) return
+  void fetch(RELAY_INGEST_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(1500),
+  }).catch(() => undefined)
+}

@@ -125,8 +125,8 @@ export function LandingPreview({
 
   return (
     <div
-      style={themeStyle(config.themeId, config.brand.accent)}
-      className={cn("w-full min-h-full font-sans", selectionMode && "select-none", className)}
+      style={themeStyle(config.themeId, config.brand.accent, config.brand.font)}
+      className={cn("lf-brand-font w-full min-h-full", selectionMode && "select-none", className)}
     >
       {visible.map((section, i) => {
         const anchor = anchorFor(section, i)

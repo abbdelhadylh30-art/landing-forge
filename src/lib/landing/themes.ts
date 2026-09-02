@@ -177,6 +177,43 @@ export function isValidAccent(hex: string | undefined): hex is string {
   return !!hex && /^#?[0-9a-f]{6}$/i.test(hex.trim())
 }
 
+// ── Brand font pairs ─────────────────────────────────────────────────────────
+// Curated display/body pairs built from system stacks — zero network requests,
+// they render instantly everywhere (preview, published page, standalone export).
+
+export type FontPairId = "system" | "editorial" | "mono" | "book" | "rounded"
+
+export interface FontPairDef {
+  id: FontPairId
+  label: string
+  hint: string
+  /** headings (h1–h3) inside the preview root */
+  display: string
+  /** everything else — set as the root font-family (inherited) */
+  body: string
+}
+
+const SANS = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+const SERIF = "Georgia, 'Iowan Old Style', 'Times New Roman', serif"
+const MONO = "ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace"
+const ROUNDED = "'Trebuchet MS', 'Segoe UI', ui-rounded, system-ui, sans-serif"
+
+export const FONT_PAIRS: FontPairDef[] = [
+  { id: "system", label: "System", hint: "Neutral, platform-native — the default look", display: SANS, body: SANS },
+  { id: "editorial", label: "Editorial", hint: "Serif headlines over sans body — magazine feel", display: SERIF, body: SANS },
+  { id: "mono", label: "Mono", hint: "Monospaced headlines — developer-tool aesthetic", display: MONO, body: SANS },
+  { id: "book", label: "Book", hint: "Serif throughout — calm, literary, long-form", display: SERIF, body: SERIF },
+  { id: "rounded", label: "Rounded", hint: "Friendly display face — consumer apps", display: ROUNDED, body: SANS },
+]
+
+export function getFontPair(id: string | undefined): FontPairDef {
+  return FONT_PAIRS.find((f) => f.id === id) ?? FONT_PAIRS[0]
+}
+
+export function isFontPairId(v: string | undefined): v is FontPairId {
+  return !!v && FONT_PAIRS.some((f) => f.id === v)
+}
+
 /**
  * Derive the full accent variable set from one brand hex: the accent itself,
  * a contrast-safe accent text color, translucent soft/border tints and a
@@ -196,10 +233,12 @@ export function accentVars(hex: string): Partial<ThemeDef["vars"]> | null {
 }
 
 /** style object with CSS vars for a theme, spread onto the preview root element.
- *  A valid `accent` hex (brand kit) overrides the theme's accent + derived tints. */
-export function themeStyle(id: ThemeId, accent?: string): React.CSSProperties {
+ *  A valid `accent` hex (brand kit) overrides the theme's accent + derived tints.
+ *  A `font` pair (brand kit) sets the display/body font stacks. */
+export function themeStyle(id: ThemeId, accent?: string, font?: string): React.CSSProperties {
   const t = getTheme(id)
   const vars = accent ? { ...t.vars, ...(accentVars(accent) ?? {}) } : t.vars
+  const pair = getFontPair(font)
   return {
     ["--lf-bg" as string]: vars.bg,
     ["--lf-bg-alt" as string]: vars.bgAlt,
@@ -211,7 +250,10 @@ export function themeStyle(id: ThemeId, accent?: string): React.CSSProperties {
     ["--lf-accent-soft" as string]: vars.accentSoft,
     ["--lf-border" as string]: vars.border,
     ["--lf-gradient" as string]: vars.gradient,
+    ["--lf-font-display" as string]: pair.display,
+    ["--lf-font-body" as string]: pair.body,
     background: vars.bg,
     color: vars.text,
+    fontFamily: pair.body,
   }
 }

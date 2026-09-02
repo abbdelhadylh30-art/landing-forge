@@ -10,6 +10,7 @@ import {
   Eye,
   FolderOpen,
   Globe,
+  Link2,
   Hammer,
   Keyboard,
   Layers,
@@ -51,6 +52,7 @@ import { useUi } from "@/lib/landing/uiStore"
 import { THEMES } from "@/lib/landing/themes"
 import { SECTION_META, SECTION_TYPES } from "@/lib/landing/types"
 import type { DeviceType } from "@/lib/landing/types"
+import { sectionAnchors, publishedAnchorUrl } from "@/lib/landing/anchors"
 import { useSaveProject } from "./useSaveProject"
 
 const DEVICE_META: Record<DeviceType, { label: string; icon: typeof Monitor }> = {
@@ -101,6 +103,14 @@ export function CommandPalette() {
 
   const hero = config.sections.find((s) => s.type === "hero")
   const heroAb = hero?.type === "hero" && hero.ab?.enabled ? hero.ab : null
+
+  // sections that render an anchor → "Copy anchor link" deep-link commands
+  const anchorEntries = React.useMemo(() => {
+    const anchors = sectionAnchors(config)
+    return config.sections
+      .map((section) => ({ section, anchor: anchors.get(section.id) }))
+      .filter((e): e is { section: typeof e.section; anchor: string } => Boolean(e.anchor))
+  }, [config])
 
   // ── Global hotkeys ────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -274,6 +284,38 @@ export function CommandPalette() {
                 <span className="ml-auto flex items-center gap-2">
                   {section.hidden && <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-zinc-500">hidden</span>}
                   <span className="text-[10px] tabular-nums text-zinc-600">#{i + 1}</span>
+                </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
+        <CommandSeparator className="bg-zinc-800/60" />
+
+        {/* Copy anchor deep-links */}
+        {anchorEntries.length > 0 && (
+          <CommandGroup heading="Copy anchor link">
+            {anchorEntries.map(({ section, anchor }, i) => (
+              <CommandItem
+                key={section.id}
+                value={`copy anchor link ${SECTION_META[section.type].label} ${anchor} section ${i + 1}`}
+                className="text-[13px] text-zinc-200 data-[selected=true]:bg-emerald-500/15 data-[selected=true]:text-emerald-100"
+                onSelect={() =>
+                  run(() => {
+                    const slug = useForge.getState().project.slug
+                    const url = publishedAnchorUrl(slug, anchor)
+                    void navigator.clipboard
+                      .writeText(url)
+                      .then(() => toast.success(`Deep link copied 🔗 #${anchor}`, { description: "Opens the published page scrolled straight to this section." }))
+                      .catch(() => toast.error("Copy failed", { description: url }))
+                  })
+                }
+              >
+                <span className="w-5 text-center text-[13px] leading-none">{SECTION_META[section.type].icon}</span>
+                <span className="truncate">{SECTION_META[section.type].label}</span>
+                <span className="font-mono text-[11px] text-emerald-300">#{anchor}</span>
+                <span className="ml-auto hidden items-center gap-1 text-[10px] text-zinc-600 sm:flex">
+                  <Link2 className="h-3 w-3" /> deep link
                 </span>
               </CommandItem>
             ))}

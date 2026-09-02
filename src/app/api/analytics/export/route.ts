@@ -4,9 +4,9 @@
 // GET /api/analytics/export?projectId=xxx
 // → 200 text/csv  (Content-Disposition: attachment; filename="analytics-{slug}.csv")
 //    Section 1: PAGEVIEWS table (id,date,visitorId,referrer,country,device,
-//               browser,duration,isBounce)
+//               browser,variant,duration,isBounce,engaged)
 //    blank line
-//    Section 2: EVENTS table (id,date,type,label,variant)
+//    Section 2: EVENTS table (id,date,type,label,variant,path)
 // → 400 / 404 as JSON { error }
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest } from "next/server"
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     const lines: string[] = []
     lines.push("PAGEVIEWS")
-    lines.push("id,date,visitorId,referrer,country,device,browser,duration,isBounce")
+    lines.push("id,date,visitorId,referrer,country,device,browser,variant,duration,isBounce,engaged")
     for (const v of views) {
       lines.push(
         [
@@ -45,8 +45,10 @@ export async function GET(req: NextRequest) {
           v.country,
           v.device,
           v.browser,
+          v.variant ?? "",
           String(v.duration),
           v.isBounce ? "true" : "false",
+          !v.isBounce ? "true" : "false",
         ]
           .map(csvCell)
           .join(",")
@@ -54,10 +56,10 @@ export async function GET(req: NextRequest) {
     }
     lines.push("")
     lines.push("EVENTS")
-    lines.push("id,date,type,label,variant")
+    lines.push("id,date,type,label,variant,path")
     for (const e of events) {
       lines.push(
-        [e.id, e.createdAt.toISOString(), e.type, e.label, e.variant ?? ""].map(csvCell).join(",")
+        [e.id, e.createdAt.toISOString(), e.type, e.label, e.variant ?? "", e.path ?? ""].map(csvCell).join(",")
       )
     }
 

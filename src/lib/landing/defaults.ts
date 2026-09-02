@@ -1,4 +1,5 @@
 import type { LandingConfig, Section, SectionType } from "./types"
+import { sectionAnchors } from "./anchors"
 
 let counter = 0
 export function sid(prefix: string): string {
@@ -268,9 +269,39 @@ export interface TemplateDef {
   build: () => LandingConfig
 }
 
+/** Re-point in-page #links that resolve to no section anchor toward the
+ *  strongest existing conversion target — starter templates must never ship
+ *  broken navigation (the readiness audit now enforces exactly this). */
+function relinkAnchors(config: LandingConfig): LandingConfig {
+  const anchors = new Set(sectionAnchors(config).values())
+  if (anchors.size === 0) return config
+  const fallback = ["cta", "pricing", "features", "faq", "contact", "top"].find((a) => anchors.has(a)) ?? [...anchors][0]
+  const fix = (href: string): string => {
+    const trimmed = href.trim()
+    if (!trimmed.startsWith("#")) return trimmed // external URL — untouched
+    const target = trimmed.slice(1)
+    if (!target || anchors.has(target)) return trimmed
+    return `#${fallback}`
+  }
+  for (const s of config.sections) {
+    if (s.type === "navbar") {
+      s.links.forEach((l) => (l.href = fix(l.href)))
+      if (s.cta) s.cta.href = fix(s.cta.href)
+    } else if (s.type === "hero") {
+      s.cta.href = fix(s.cta.href)
+      if (s.secondaryCta) s.secondaryCta.href = fix(s.secondaryCta.href)
+    } else if (s.type === "cta-final") {
+      s.cta.href = fix(s.cta.href)
+    } else if (s.type === "footer") {
+      s.linkGroups.forEach((g) => g.items.forEach((l) => (l.href = fix(l.href))))
+    }
+  }
+  return config
+}
+
 function assemble(brandName: string, themeId: LandingConfig["themeId"], types: SectionType[]): LandingConfig {
   const sections = types.map((t) => createSection(t))
-  return {
+  return relinkAnchors({
     version: 1,
     brand: { name: brandName, tagline: "Ship beautiful pages in minutes" },
     themeId,
@@ -279,7 +310,7 @@ function assemble(brandName: string, themeId: LandingConfig["themeId"], types: S
       description: `${brandName} helps you launch production-ready landing pages from one config file.`,
     },
     sections,
-  }
+  })
 }
 
 export const TEMPLATES: TemplateDef[] = [

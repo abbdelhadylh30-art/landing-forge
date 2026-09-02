@@ -550,3 +550,74 @@ Next-phase priority order:
 3. **Brand kit depth** — custom fonts (2–3 curated pairs) + logo size/position controls in the navbar; readiness audit checks for logo/brand consistency.
 4. **Anchor UX** — readiness "broken link" detection for hrefs that match no section anchor + palette command "Copy anchor link".
 5. Smaller: seed script option to keep historical rows (append instead of wipe), CSV export including variant column, mobile toolbar compaction if 2 rows feel tight.
+
+---
+Task ID: R11
+Agent: main (Z.ai Code) — round 11
+Task: QA triage (stable, no bugs) → ship R10-handover priorities: WebSocket live-push relay (#1), anchor UX + broken-link detection (#4), brand font pairs (#3), CSV variant column (#5) + styling polish
+
+Work Log:
+- QA baseline (agent-browser, via gateway :81): STABLE — 0 page/console errors across studio/analytics/projects/published, lint 0/0, tsc clean (app code). No bugs found → feature work per R10 handover.
+- NEW FEATURE 1 — real-time push relay (replaces the 5s-poll heartbeat for live data):
+  - Mini-service `mini-services/analytics-live/` (own bun project, `bun --hot`): socket.io on :3003 (path "/", reached via Caddy `/?XTransformPort=3003`) for browsers; plain HTTP on 127.0.0.1:3004 for the Next.js app (`POST /ingest`, `GET /health`). Presence Map keyed by pageview id; 15s inactivity sweep (60s grace socket-backed / 45s soft); dashboards get presence:snapshot + visit:new/update/leave + event:new.
+  - `src/components/forge/shared/livesocket.ts`: `useVisitorRelay` (published page joins with pageview id + variant; heartbeats piggyback the existing 15s pings and CTA/form handlers) and `useDashboardRelay` (presence state, leftIds suppression set, signals counter, lastEvent). `mergeLiveVisits(rest, ws, leftIds)` — WS wins on id collisions; REST rows the relay reported LEFT are suppressed for 90s so departures are instant even while the REST grace window still lists them.
+  - `/api/analytics/track` POST/PATCH → `notifyLive()` fire-and-forget ingest (pageview → soft presence so even socket-less visitors appear; engagement → duration push; events → event:new). 1.5s abort, silent on failure — REST polling remains the backstop.
+  - DashboardView: "Live push" toggle state (violet Zap) vs polling (emerald pulse); PUSH/POLLING badge in the strip; REST backstop drops to 20s while connected (5s when not); relay signals → debounced 1.2s quiet reload so charts/stat cards catch up near-instantly. Published-page pill shows "Live·push" + violet ring while streaming.
+  - Ops: `start.sh` — double-fork daemonization (bun reparented to init) because plain `nohup &` gets reaped between tool commands; health-checked startup loop. Service survived multiple command boundaries + a Next dev-server restart (clients auto-reconnect).
+  - VERIFIED E2E through the gateway: visit appears with vA badge + ticking timer the moment the page opens (not on the next poll); CTA click → "New data arrived" dot + recent-events row within ~1.2s; tab close → "0 visitors / No one is on the page" in ~2s and REST no longer re-adds it; relay /health mirrors visitors/dashboards live.
+- NEW FEATURE 2 — anchor UX + broken-link detection (found 10 REAL broken links):
+  - New `src/lib/landing/anchors.ts`: `sectionAnchors` (exact replica of the preview's anchor derivation), `collectAnchorLinks` (navbar links/CTA, hero CTA+secondary, cta-final, footer groups), `findBrokenAnchorLinks`.
+  - Readiness audit: new "Anchor links" check (weight 5) — fail lists the broken links ("label" → #target), pass counts resolved links; click jumps to the offending section.
+  - Data fixes: Bean Route had 10 broken links (navbar/footer/hero) — set semantic section anchors (features→how-it-works & roasts, testimonials→about) and re-pointed footer Sustainability→#about, Blog→"Subscribe"→#cta, Shipping→#faq. Templates: added `relinkAnchors()` to assemble() so EVERY starter template ships resolving links (Mobile App/Agency/Minimal/Paper Docs had 2–6 broken each). Readiness back to 100/100.
+  - "Copy anchor link" command group in ⌘K palette (per section with an anchor — emerald theme, copies `origin/?p=slug#anchor` deep link) + a "Link" copy button beside every AnchorField in the properties panel.
+  - Published page: deep links (`/?p=slug#anchor`) now scroll — hash honored after async render (native hash-scroll fired before sections existed; verified container scrolled 579px to #how-it-works).
+- NEW FEATURE 3 — brand font pairs (curated, zero webfont loading):
+  - themes.ts: FONT_PAIRS (system/editorial/mono/book/rounded — display + body stacks from system fonts), themeStyle(themeId, accent, font) now emits --lf-font-display/--lf-font-body + root fontFamily; types: brand.font; yaml roundtrip (validated — invalid ids dropped); `.lf-brand-font h1/h2/h3 { font-family: var(--lf-font-display) }` added to globals.css AND export.css (standalone export inherits automatically).
+  - PropertiesPanel brand kit: FontPicker — 5 chips with live "Ag" previews in each display face, ring-selected state, reset button.
+  - VERIFIED: editorial → hero h1 = Georgia while body stays sans (computed styles); persisted via autosave to DB; published page renders it; reset persists; YAML roundtrip + invalid-drop.
+- NEW FEATURE 4 — CSV export now includes variant/engaged columns (pageviews: +variant +engaged) and path on events.
+- Polish/styling: push toggle + badge states, deep-link palette group, font chips, pill "Live·push" indicator, leftIds departure UX.
+- Ops hardening: next.config.ts `allowedDevOrigins: ["space-z.ai", "*.space-z.ai"]` — silences the preview-domain cross-origin dev warning (config change verified with a clean dev-server restart).
+- QA methodology note (IMPORTANT for next rounds): the WS relay ONLY works through the Caddy gateway (:81) — a browser on localhost:3000 has same-origin = Next.js, so XTransformPort never routes. Always QA relay features via http://localhost:81/. Also: engine.io with path "/" swallows all plain HTTP on that port (why ingest lives on :3004).
+- Final regression: fresh sessions 0 console/page errors (studio, analytics, projects, published); mobile 390px no overflow (dashboard, studio edit pane incl. brand-kit font row, published); VLM visual reviews of dashboard strip + font rendering + mobile fit all pass; lint 0/0; tsc clean; dev.log all 200s (only transient 500s during an edit-compile window, self-resolved); relay healthy and surviving command boundaries.
+
+Stage Summary:
+- The analytics loop is now PUSH-based: presence, engagement and events stream over WebSocket the instant they happen; REST polling is a 20s consistency backstop. Visitors appear/disappear in real time and charts catch up in ~1.2s.
+- The readiness audit now catches broken in-page navigation before launch — and immediately proved its worth by finding 10 broken links in the demo project and 4 templates with 2–6 broken links each, all fixed.
+- Brand kit gained typography: 5 curated display/body font pairs with live previews, applied across preview, published page and standalone export with YAML roundtrip.
+- Deep links (/?p=slug#anchor) are first-class: copy from the palette or the properties panel, and they scroll correctly on the published page.
+- CSV exports carry variant + engagement context for per-variant analysis outside the tool.
+
+---
+Task ID: R11-HANDOVER
+Agent: main (Z.ai Code)
+Task: Round 11 handover — status / goals / risks & next priorities
+
+## 1. Current project status assessment
+- **Stable, and the live-data loop is now push-based.** Dev server healthy (port 3000; `allowedDevOrigins` added for the preview domain), `bun run lint` 0/0, `tsc --noEmit` clean for app code, 0 page/console errors on fresh sessions (verified through the Caddy gateway at :81), dev.log all-200s.
+- New mini-service `analytics-live` (socket.io :3003 + internal HTTP :3004) runs as a PPID-1 daemon via `mini-services/analytics-live/start.sh` and survived every command boundary this round. If it ever goes down, the dashboard silently falls back to 5s REST polling — nothing breaks.
+- All four R10-handover priorities shipped: WebSocket push (#1), anchor UX (#4), brand fonts (#3), CSV variant column (#5).
+
+## 2. Current goals / completed modifications / verification results
+Goals: QA triage (stable → no fixes needed) → ship R10 priorities 1/3/4/5 + polish.
+- Push relay: browser protocol (visit:join/heartbeat, dash:subscribe) + server-to-server ingest from the track API; presence keyed by pageview id; dashboard merges WS presence over REST rows with 90s leave-suppression. VERIFIED: instant appear/disappear, CTA click → charts in ~1.2s, relay health live.
+- Anchor UX: shared anchors lib; readiness "Anchor links" check (weight 5) — caught 10 real broken links in Bean Route + broken links in 4 of 6 templates, all fixed (semantic anchors + relinkAnchors() in template assembly + footer re-points); "Copy anchor link" palette group + AnchorField Link button; published page honors #hash deep links after async render. VERIFIED: audit 100/100 with "17 in-page links — all resolve", deep link scrolls, clipboard toasts.
+- Brand fonts: FONT_PAIRS (5 curated system-stack pairs), --lf-font-display/--lf-font-body vars through themeStyle, .lf-brand-font h1–h3 rule in globals.css + export.css, FontPicker chips with live "Ag" previews, YAML roundtrip with validation. VERIFIED: Georgia headlines with sans body, persisted, published page + export inherit.
+- CSV: pageview rows +variant/+engaged, event rows +path. VERIFIED output headers + rows.
+- Cross-view styling polish + mobile 390px sweep (dashboard, studio panes, brand kit, published) — all clean, VLM-reviewed.
+
+## 3. Unresolved issues / risks + next-phase priorities
+Known limitations / risks:
+- The relay is in-memory single-instance — a restart drops presence (visitors re-join via socket reconnect or re-appear as soft presence on the next ingest; dashboards re-subscribe automatically). Fine at demo scale; multi-instance would need Redis pub/sub.
+- `notifyLive` ingest adds ~1 extra HTTP hop per tracked event (localhost, fire-and-forget, ~10ms — negligible at this scale).
+- Engagement pings still throttle in hidden tabs (visibility-gated 15s cadence); the pagehide keepalive ping covers the final duration.
+- QA through :81 is REQUIRED for relay features (localhost:3000 bypasses Caddy → no XTransformPort routing). Also engine.io path "/" swallows plain HTTP on :3003 — keep the :3004 internal port for ingest.
+- Bean Route demo data now relies on section anchors (how-it-works/roasts/about); if the section set is reset/regenerated, the anchor audit will flag the navbar/footer links again (by design).
+- next.config `allowedDevOrigins` uses a wildcard for the preview domain — tighten if the sandbox domain scheme changes.
+
+Next-phase priority order:
+1. **Section-level A/B** (carried from R10 #2) — extend variant tagging beyond the hero using the same PageView.variant plumbing + per-section variant exposure events; the dashboard A/B card is ready to group by section.
+2. **Live events ticker** — a small "latest events" strip on the dashboard fed by relay event:new (last ~10: "cta click hero · vB · 2s ago") — the data already streams, only the UI is missing.
+3. **Fonts depth** — optional Google-Fonts loading (2–3 curated pairs w/ preconnect) for users who want brand-true type; keep system stacks as the offline default.
+4. **Seed-script options** — "keep historical rows" append mode (currently wipes) so engagement history survives demo re-seeds; also seed a couple of long-duration engaged visits for a richer story.
+5. Smaller: readiness check for logo/brand consistency (R10 #3 leftover), mobile toolbar compaction if 2 rows feel tight on small phones, CSV export of the live-strip snapshot.

@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
-import { ACCENT_PRESETS, THEMES, accentVars, getTheme, isValidAccent } from "@/lib/landing/themes"
+import { ACCENT_PRESETS, FONT_PAIRS, THEMES, accentVars, getTheme, isValidAccent } from "@/lib/landing/themes"
 import { SECTION_META } from "@/lib/landing/types"
 import type {
   Cta,
@@ -1058,6 +1058,60 @@ function SectionEditor({ section }: { section: Section }) {
 
 // ─── Brand kit (page tab) ─────────────────────────────────────────────────────
 
+/** Brand font-pair picker: curated display/body stacks with live "Ag" previews. */
+function FontPicker() {
+  const font = useForge((s) => s.config.brand.font)
+  const updateBrand = useForge((s) => s.updateBrand)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Brand fonts</Label>
+        {font && (
+          <button
+            type="button"
+            className="ml-auto flex items-center gap-1 rounded-md border border-zinc-700 px-1.5 py-0.5 text-[9px] font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+            onClick={() => updateBrand({ font: undefined })}
+            title="Back to the system default pair"
+          >
+            <Trash2 className="h-2.5 w-2.5" /> Reset
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-5 gap-1.5">
+        {FONT_PAIRS.map((p) => {
+          const active = (font ?? "system") === p.id
+          return (
+            <button
+              key={p.id}
+              type="button"
+              aria-pressed={active}
+              title={`${p.label} — ${p.hint}`}
+              onClick={() => updateBrand({ font: p.id === "system" ? undefined : p.id })}
+              className={cn(
+                "group flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 transition-all hover:border-violet-500/60 hover:bg-violet-500/5",
+                active ? "border-violet-500 bg-violet-500/10 ring-1 ring-violet-500/40" : "border-zinc-800 bg-zinc-900/40"
+              )}
+            >
+              <span
+                className={cn("text-[15px] leading-none", active ? "text-violet-200" : "text-zinc-300")}
+                style={{ fontFamily: p.display }}
+                aria-hidden
+              >
+                Ag
+              </span>
+              <span className={cn("text-[9px] font-medium leading-none", active ? "text-violet-300" : "text-zinc-500")}>{p.label}</span>
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[10px] leading-tight text-zinc-500">
+        Display type for headlines, body stays readable. System stacks — no webfonts to load.
+      </p>
+    </div>
+  )
+}
+
 /** Brand accent picker: presets, native color input, live CTA preview, reset. */
 function AccentPicker() {
   const accent = useForge((s) => s.config.brand.accent)
@@ -1170,11 +1224,20 @@ function AccentPicker() {
 function AnchorField({ section }: { section: Section }) {
   const update = useForge((s) => s.updateSection)
   const value = section.anchor ?? ""
+  const slug = useForge((s) => s.project.slug)
   const onChange = (raw: string) => {
-    const slug = raw.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "")
-    update(section.id, ({ anchor: slug || undefined } as Partial<Section>))
+    const slugified = raw.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "")
+    update(section.id, ({ anchor: slugified || undefined } as Partial<Section>))
   }
   const typeAnchor = section.type === "hero" ? "top" : section.type === "cta-final" ? "cta" : section.type
+  const activeAnchor = value || typeAnchor
+  const copyDeepLink = () => {
+    const url = `${window.location.origin}/?p=${encodeURIComponent(slug)}#${activeAnchor}`
+    void navigator.clipboard
+      .writeText(url)
+      .then(() => toast.success(`Deep link copied 🔗 #${activeAnchor}`, { description: "Opens the published page scrolled to this section." }))
+      .catch(() => toast.error("Copy failed", { description: url }))
+  }
   return (
     <Field
       label="Anchor link"
@@ -1192,6 +1255,15 @@ function AnchorField({ section }: { section: Section }) {
           className="h-8 border-zinc-700/80 bg-zinc-900/60 font-mono text-xs text-zinc-100 focus-visible:ring-violet-500/60"
           aria-label="Custom anchor id for this section"
         />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 shrink-0 gap-1 px-2 text-[10px] text-zinc-400 hover:text-emerald-300"
+          onClick={copyDeepLink}
+          title={`Copy ${window.location.origin}/?p=${encodeURIComponent(slug || "")}#${activeAnchor} — opens the published page scrolled here`}
+        >
+          <Copy className="h-3 w-3" /> Link
+        </Button>
         {value && (
           <Button
             variant="ghost"
@@ -1236,6 +1308,7 @@ function PageSettings() {
           allowUpload
         />
         <AccentPicker />
+        <FontPicker />
       </div>
 
       <TextField label="SEO title" value={config.seo.title} onChange={(title) => updateSeo({ title })} maxLength={70} hint={`${config.seo.title.length}/70 — shown in search results & link previews`} />

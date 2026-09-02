@@ -1,4 +1,5 @@
 import type { LandingConfig } from "./types"
+import { collectAnchorLinks, findBrokenAnchorLinks } from "./anchors"
 
 export type ReadinessLevel = "pass" | "warn" | "fail"
 
@@ -178,6 +179,27 @@ export function auditConfig(config: LandingConfig): ReadinessReport {
         : `${hiddenCount} section${hiddenCount > 1 ? "s" : ""} hidden and won't deploy. Un-hide or delete to clean up.`,
     level: hiddenCount === 0 ? "pass" : "warn",
     weight: 3,
+  })
+
+  // ── In-page navigation: every #anchor link must resolve to a section ──────
+  const brokenLinks = findBrokenAnchorLinks(config)
+  const anchorLinks = collectAnchorLinks(config)
+  checks.push({
+    id: "anchor-links",
+    category: "structure",
+    label: "Anchor links",
+    detail:
+      anchorLinks.length === 0
+        ? "No in-page anchor links — navbar/footer links pointing at sections would aid navigation."
+        : brokenLinks.length === 0
+          ? `${anchorLinks.length} in-page link${anchorLinks.length > 1 ? "s" : ""} — all resolve to sections. ✓`
+          : `${brokenLinks.length} broken: ${brokenLinks
+              .slice(0, 3)
+              .map((b) => `“${b.label}” → #${b.target}`)
+              .join(" · ")}${brokenLinks.length > 3 ? " …" : ""} — nothing on the page has that anchor.`,
+    level: anchorLinks.length === 0 ? "warn" : brokenLinks.length === 0 ? "pass" : "fail",
+    weight: 5,
+    selectSectionId: brokenLinks[0]?.sectionId,
   })
 
   // ── SEO ────────────────────────────────────────────────────────────────────

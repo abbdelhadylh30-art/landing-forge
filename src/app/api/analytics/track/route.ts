@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
-import { guard, HttpError, num, optStr, readJsonBody, str } from "@/lib/landing/server"
+import { guard, HttpError, notifyLive, num, optStr, readJsonBody, str } from "@/lib/landing/server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -58,6 +58,17 @@ export async function POST(req: NextRequest) {
         },
         select: { id: true },
       })
+      // surface the new visit on connected dashboards (soft presence)
+      notifyLive({
+        kind: "pageview",
+        projectId,
+        id: row.id,
+        device: str(body.device) || "desktop",
+        browser: str(body.browser) || "Chrome",
+        country: str(body.country) || "US",
+        referrer: str(body.referrer) || "direct",
+        variant: str(body.variant),
+      })
       return NextResponse.json({ ok: true, id: row.id })
     }
 
@@ -72,6 +83,8 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true },
     })
+    // push CTA clicks / form submits to dashboards instantly
+    notifyLive({ kind: "event", projectId, type, label: str(body.label) ?? "", variant: str(body.variant) })
     return NextResponse.json({ ok: true, id: row.id })
   })
 }
@@ -81,7 +94,7 @@ export async function PATCH(req: NextRequest) {
     const body = await readJsonBody(req)
     const id = str(body.id)
     if (!id) throw new HttpError(400, "Missing 'id'")
-    const row = await db.pageView.findUnique({ where: { id }, select: { id: true, duration: true, isBounce: true } })
+    const row = await db.pageView.findUnique({ where: { id }, select: { id: true, projectId: true, duration: true, isBounce: true } })
     if (!row) throw new HttpError(404, "Pageview not found")
 
     // duration only ever grows (latest ping wins, but never shrinks)
@@ -92,6 +105,8 @@ export async function PATCH(req: NextRequest) {
       where: { id },
       data: { duration, ...(engaged ? { isBounce: false } : {}) },
     })
+    // keep soft-presence durations live on dashboards without sockets
+    notifyLive({ kind: "engagement", projectId: str(body.projectId) || row.projectId, id, duration, engaged })
     return NextResponse.json({ ok: true, duration, isBounce: engaged ? false : row.isBounce })
   })
 }

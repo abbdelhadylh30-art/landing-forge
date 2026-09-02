@@ -240,3 +240,11 @@
 .lf-label-badge {
   animation: lf-badge-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* Brand font pairs — headings inside the preview root follow the display stack
+   (the body stack is set inline on the root and inherited by everything else). */
+.lf-brand-font h1,
+.lf-brand-font h2,
+.lf-brand-font h3 {
+  font-family: var(--lf-font-display, inherit);
+}

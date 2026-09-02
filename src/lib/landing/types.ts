@@ -269,6 +269,8 @@ export interface LandingConfig {
     logoUrl?: string
     /** custom accent hex — overrides the theme's accent (and derived tints) */
     accent?: string
+    /** curated display/body font pair id (see FONT_PAIRS) */
+    font?: string
   }
   themeId: ThemeId
   seo: {

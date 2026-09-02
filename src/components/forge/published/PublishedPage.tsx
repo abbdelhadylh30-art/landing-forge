@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { LandingPreview } from "@/components/forge/preview/LandingPreview"
 import { track, pingEngagement, detectDevice, detectBrowser, getVisitorId } from "@/components/forge/shared/tracking"
+import { useVisitorRelay } from "@/components/forge/shared/livesocket"
 import type { HeroSection, LandingConfig, ProjectSummary, ProjectWithConfig, Section } from "@/lib/landing/types"
 
 type LoadState =
@@ -76,6 +77,26 @@ export function PublishedPage({ slug }: { slug: string }) {
   const [savedDuration, setSavedDuration] = React.useState(0)
   const trackedOnceRef = React.useRef(false)
 
+  // ── Project identity (used by handlers + the live relay below)
+  const projectId = state.kind === "ready" ? state.project.id : null
+  const config: LandingConfig | null = state.kind === "ready" ? state.project.config : null
+
+  // pageview id as STATE (the relay needs it to join) — the ref stays for the
+  // synchronous event handlers below
+  const [pageviewId, setPageviewId] = React.useState<string | null>(null)
+
+  // live relay (WebSocket presence — so the dashboard's "Right now" strip
+  // updates the instant this page opens, without waiting for a poll)
+  const relay = useVisitorRelay({
+    projectId,
+    pageviewId,
+    device: detectDevice(),
+    browser: detectBrowser(),
+    variant,
+    path: `/${slug}`,
+    referrer: typeof document !== "undefined" ? document.referrer || "direct" : "direct",
+  })
+
   // ── Load project by slug (last SAVED state — this is what "published" means)
   React.useEffect(() => {
     let cancelled = false
@@ -128,6 +149,7 @@ export function PublishedPage({ slug }: { slug: string }) {
       isBounce: true, // provisional bounce — engagement pings de-bounce this visit
     }).then((pageviewId) => {
       pageviewIdRef.current = pageviewId
+      setPageviewId(pageviewId)
     })
     setEvents((n) => n + 1)
   }, [state, slug])
@@ -136,12 +158,14 @@ export function PublishedPage({ slug }: { slug: string }) {
   // Every 15s while the tab is visible we report elapsed seconds; the final
   // ping rides on pagehide/visibilitychange with keepalive. Duration ≥ 15s or
   // an interaction (CTA click / form submit) marks the visit non-bounce.
+  // Each ping also rides the WebSocket relay so dashboards tick in real time.
   const elapsedS = () => Math.floor((Date.now() - sessionStartRef.current) / 1000)
   React.useEffect(() => {
     if (state.kind !== "ready") return
     const ping = () => {
       const id = pageviewIdRef.current
       if (!id) return
+      relay.heartbeat(elapsedS(), engagedRef.current)
       void pingEngagement(id, { duration: elapsedS(), ...(engagedRef.current ? { engaged: true } : {}) }).then((ok) => {
         if (ok) setSavedDuration(elapsedS())
       })
@@ -160,7 +184,7 @@ export function PublishedPage({ slug }: { slug: string }) {
       document.removeEventListener("visibilitychange", onVisibility)
       window.removeEventListener("pagehide", onPageHide)
     }
-  }, [state.kind])
+  }, [state.kind, relay.heartbeat])
 
   // ── Real page title from the project's SEO settings
   React.useEffect(() => {
@@ -170,14 +194,24 @@ export function PublishedPage({ slug }: { slug: string }) {
     }
   }, [state])
 
-  // ── Handlers wired into the landing preview
-  const projectId = state.kind === "ready" ? state.project.id : null
-  const config: LandingConfig | null = state.kind === "ready" ? state.project.config : null
+  // ── Deep links (#anchor): the page renders asynchronously, so the browser's
+  // native hash-scroll fires before any section exists. Honor it once ready.
+  React.useEffect(() => {
+    if (state.kind !== "ready") return
+    const hash = window.location.hash.slice(1).trim()
+    if (!hash) return
+    const t = setTimeout(() => {
+      document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 200)
+    return () => clearTimeout(t)
+  }, [state])
 
+  // ── Handlers wired into the landing preview
   const handleCtaClick = React.useCallback(
     (section: Section, label: string) => {
       if (!projectId) return
       engagedRef.current = true
+      relay.heartbeat(Math.floor((Date.now() - sessionStartRef.current) / 1000), true)
       if (pageviewIdRef.current) void pingEngagement(pageviewIdRef.current, { duration: Math.floor((Date.now() - sessionStartRef.current) / 1000), engaged: true })
       setClicks((n) => n + 1)
       setEvents((n) => n + 1)
@@ -189,13 +223,14 @@ export function PublishedPage({ slug }: { slug: string }) {
       })
       toast.success("CTA click tracked 🎯", { description: label })
     },
-    [projectId, variant, slug]
+    [projectId, variant, slug, relay.heartbeat]
   )
 
   const handleFormSubmit = React.useCallback(
     (section: Section, data: Record<string, string>) => {
       if (!projectId) return
       engagedRef.current = true
+      relay.heartbeat(Math.floor((Date.now() - sessionStartRef.current) / 1000), true)
       if (pageviewIdRef.current) void pingEngagement(pageviewIdRef.current, { duration: Math.floor((Date.now() - sessionStartRef.current) / 1000), engaged: true })
       setEvents((n) => n + 1)
       setLeadsSent((n) => n + 1)
@@ -214,7 +249,7 @@ export function PublishedPage({ slug }: { slug: string }) {
         })
         .catch(() => undefined)
     },
-    [projectId, slug]
+    [projectId, slug, relay.heartbeat]
   )
 
   const copyLink = async () => {
@@ -295,12 +330,17 @@ export function PublishedPage({ slug }: { slug: string }) {
           )}
         >
           <div className="pointer-events-auto flex max-w-full items-center gap-2 overflow-hidden rounded-xl border border-zinc-700/60 bg-zinc-950/85 px-2.5 py-2 shadow-2xl shadow-black/50 backdrop-blur-xl">
-            {/* live pulse */}
+            {/* live pulse — violet ring when riding the real-time relay */}
             <span className="relative flex size-2 shrink-0" aria-hidden>
+              {relay.connected && (
+                <span className="absolute -inset-1 rounded-full bg-violet-500/25" title="Streaming live to the analytics dashboard" />
+              )}
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
               <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
             </span>
-            <span className="hidden shrink-0 text-[11px] font-semibold text-emerald-300 sm:inline">Live</span>
+            <span className="hidden shrink-0 text-[11px] font-semibold text-emerald-300 sm:inline" title={relay.connected ? "Live — streaming presence to the dashboard in real time" : "Live — analytics sync every 15s"}>
+              Live{relay.connected && <span className="text-violet-300">·push</span>}
+            </span>
 
             <span className="hidden h-4 w-px shrink-0 bg-zinc-700/60 sm:block" aria-hidden />
 

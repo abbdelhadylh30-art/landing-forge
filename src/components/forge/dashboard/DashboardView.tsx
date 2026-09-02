@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
 import type { AnalyticsPayload, LeadRecord, LiveVisit } from "@/lib/landing/types"
 import { LeadDetailSheet, downloadLeadsCsv } from "./LeadDetailSheet"
+import { useDashboardRelay, mergeLiveVisits } from "@/components/forge/shared/livesocket"
 
 const ACCENT = "#A78BFA"
 const ACCENT2 = "#f0abfc"
@@ -143,7 +144,7 @@ function ActiveVisitCard({ visit, since }: { visit: LiveVisit; since: number }) 
 }
 
 /** "Right now" live-visitors strip — active visits on the published page. */
-function LiveVisitsPanel({ live, liveEnabled, slug }: { live: AnalyticsPayload["live"]; liveEnabled: boolean; slug: string }) {
+function LiveVisitsPanel({ live, liveEnabled, slug, push }: { live: AnalyticsPayload["live"]; liveEnabled: boolean; slug: string; push: boolean }) {
   // snapshot time when the payload identity changes — timers tick locally from
   // the server-known duration, so they stay smooth between 5s polls
   const [since, setSince] = React.useState(() => Date.now())
@@ -163,6 +164,21 @@ function LiveVisitsPanel({ live, liveEnabled, slug }: { live: AnalyticsPayload["
         <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums", active.length ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "bg-zinc-800 text-zinc-500")}>
           {active.length} {active.length === 1 ? "visitor" : "visitors"} on the page
         </span>
+        {push ? (
+          <span
+            className="flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300"
+            title="Real-time push — presence & events stream over WebSocket the instant they happen"
+          >
+            <Zap className="h-2.5 w-2.5" /> push
+          </span>
+        ) : (
+          <span
+            className="rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-500"
+            title="Polling fallback — refreshing every few seconds over HTTP"
+          >
+            polling
+          </span>
+        )}
         <span className="rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-500 tabular-nums" title="Total visits in the last 5 minutes">
           {live.last5m} in last 5m
         </span>
@@ -225,6 +241,11 @@ export function DashboardView() {
   const [lastRefresh, setLastRefresh] = React.useState<number | null>(null)
   const [hasNew, setHasNew] = React.useState(false)
 
+  // ── real-time push relay (WebSocket) — presence + instant event signals.
+  // Falls back silently to REST polling whenever the relay is unreachable.
+  const relay = useDashboardRelay(projectId, live)
+  const pushConnected = live && relay.connected
+
   const load = React.useCallback(
     async (opts?: { quiet?: boolean }) => {
       if (!projectId) return
@@ -258,15 +279,28 @@ export function DashboardView() {
     void load()
   }, [load])
 
-  // ── Live polling: refresh every 5s while enabled and the tab is visible.
-  // Payloads are diffed — unchanged data never re-renders the charts.
+  // ── Live polling: REST backstop while enabled + tab visible.
+  // While the push relay is connected we poll slowly (20s consistency check);
+  // without it we fall back to the original 5s cadence. Payloads are diffed —
+  // unchanged data never re-renders the charts.
   React.useEffect(() => {
     if (!live || !projectId) return
     const t = setInterval(() => {
       if (!document.hidden) void load({ quiet: true })
-    }, 5000)
+    }, pushConnected ? 20_000 : 5_000)
     return () => clearInterval(t)
-  }, [live, projectId, load])
+  }, [live, projectId, load, pushConnected])
+
+  // ── Push-driven refresh: relay signals (new visit / CTA click / form submit)
+  // trigger a quiet reload within ~1.2s — charts catch up without waiting for
+  // the polling backstop. Debounced so bursts collapse into one fetch.
+  React.useEffect(() => {
+    if (!relay.signals || !live) return
+    const t = setTimeout(() => {
+      if (!document.hidden) void load({ quiet: true })
+    }, 1200)
+    return () => clearTimeout(t)
+  }, [relay.signals, live, load])
 
   const seed = async () => {
     if (!projectId) return
@@ -326,6 +360,15 @@ export function DashboardView() {
     await load()
   }
 
+  const mergedLive = React.useMemo(() => {
+    const base = data?.live
+    if (!base) return null
+    // when the push relay is connected, its presence + leave-decisions are
+    // strictly fresher than the REST poll — let them win
+    const left = relay.connected ? relay.leftIds : undefined
+    return { ...base, active: mergeLiveVisits(base.active, relay.visits, left) }
+  }, [data, relay.visits, relay.connected, relay.leftIds])
+
   if (loading && !data) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -355,7 +398,7 @@ export function DashboardView() {
             </p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            {/* Live auto-refresh toggle — polls every 5s while the tab is visible */}
+            {/* Live auto-refresh toggle — push relay w/ REST polling backstop */}
             <button
               type="button"
               role="switch"
@@ -363,25 +406,33 @@ export function DashboardView() {
               onClick={() => setLive((v) => !v)}
               title={
                 live
-                  ? `Live refresh on — new published-page visits appear automatically${lastRefresh ? ` (last check ${Math.max(0, Math.round((Date.now() - lastRefresh) / 1000))}s ago)` : ""}`
+                  ? pushConnected
+                    ? "Live push connected — visits & events stream over WebSocket instantly"
+                    : `Live refresh on (polling) — new published-page visits appear automatically${lastRefresh ? ` (last check ${Math.max(0, Math.round((Date.now() - lastRefresh) / 1000))}s ago)` : ""}`
                   : "Live refresh paused — click to resume auto-updating"
               }
               className={cn(
                 "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
                 live
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+                  ? pushConnected
+                    ? "border-violet-500/40 bg-violet-500/10 text-violet-200 hover:bg-violet-500/15"
+                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
                   : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300"
               )}
             >
               {live ? (
-                <span className="relative flex size-2" aria-hidden>
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-                  <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
-                </span>
+                pushConnected ? (
+                  <Zap className="h-3 w-3" />
+                ) : (
+                  <span className="relative flex size-2" aria-hidden>
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                    <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+                  </span>
+                )
               ) : (
                 <Pause className="h-3 w-3" />
               )}
-              {live ? "Live" : "Paused"}
+              {live ? (pushConnected ? "Live push" : "Live") : "Paused"}
               {live && hasNew && <span className="h-1.5 w-1.5 rounded-full bg-violet-400" title="New data just arrived" aria-label="New data arrived" />}
             </button>
             <Select value={days} onValueChange={setDays}>
@@ -434,7 +485,7 @@ export function DashboardView() {
         ) : (
           <>
             {/* Live "right now" strip — active visits, ticking timers */}
-            <LiveVisitsPanel live={data!.live} liveEnabled={live} slug={slug} />
+            <LiveVisitsPanel live={mergedLive ?? data!.live} liveEnabled={live} slug={slug} push={pushConnected} />
 
             {/* Stat cards */}
             <div className="lf-fade-up-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

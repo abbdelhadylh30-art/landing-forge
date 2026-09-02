@@ -1,6 +1,6 @@
 import { load as yamlLoad, dump as yamlDump } from "js-yaml"
 import { createSection, sid } from "./defaults"
-import { isValidAccent } from "./themes"
+import { isValidAccent, isFontPairId } from "./themes"
 import type { LandingConfig, Section, SectionType, ThemeId } from "./types"
 import { SECTION_TYPES } from "./types"
 
@@ -141,6 +141,7 @@ export function normalizeConfig(input: unknown): LandingConfig {
   if (logoUrl) brandOut.logoUrl = logoUrl
   const accent = typeof brand.accent === "string" ? brand.accent.trim() : ""
   if (isValidAccent(accent)) brandOut.accent = accent.startsWith("#") ? accent : `#${accent}`
+  if (typeof brand.font === "string" && isFontPairId(brand.font)) brandOut.font = brand.font
   return {
     version: 1,
     brand: brandOut,
@@ -194,6 +195,7 @@ export function configToYaml(config: LandingConfig): string {
       tagline: config.brand.tagline || undefined,
       logoUrl: config.brand.logoUrl || undefined,
       accent: config.brand.accent || undefined,
+      font: config.brand.font || undefined,
     },
     theme: config.themeId,
     seo: { ...config.seo },
