@@ -9,8 +9,10 @@ import {
   Download,
   Eye,
   FolderOpen,
+  Globe,
   Hammer,
   Keyboard,
+  Layers,
   Monitor,
   Palette,
   Plus,
@@ -191,6 +193,19 @@ export function CommandPalette() {
             <Rocket className="h-4 w-4 text-fuchsia-300" /> Deploy site
             <CommandShortcut>{MOD}D</CommandShortcut>
           </CommandItem>
+          <CommandItem
+            className="text-[13px] text-zinc-200 data-[selected=true]:bg-emerald-500/15 data-[selected=true]:text-emerald-100"
+            onSelect={() =>
+              run(() => {
+                const slug = useForge.getState().project.slug
+                if (!useForge.getState().project.id) return
+                window.open(`/?p=${encodeURIComponent(slug)}`, "_blank", "noopener")
+                toast.info("Published page opened 🔗", { description: "Real visits there are tracked — refresh Analytics to see them." })
+              })
+            }
+          >
+            <Globe className="h-4 w-4 text-emerald-300" /> Open published page (live tracking)
+          </CommandItem>
           <CommandItem className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100" onSelect={() => run(undo)} disabled={!canUndo}>
             <Undo2 className="h-4 w-4 text-zinc-400" /> Undo
             <CommandShortcut>{MOD}Z</CommandShortcut>
@@ -265,6 +280,21 @@ export function CommandPalette() {
 
         {/* Add section */}
         <CommandGroup heading="Add section">
+          <CommandItem
+            value="add browse packs template chooser"
+            className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100"
+            onSelect={() =>
+              run(() => {
+                setView("studio")
+                setPreviewMode(false)
+                openDialog("add-section")
+              })
+            }
+          >
+            <Layers className="h-4 w-4 text-violet-300" />
+            Browse content packs…
+            <span className="ml-auto hidden text-[10px] text-zinc-600 sm:block">35 presets across 12 types</span>
+          </CommandItem>
           {SECTION_TYPES.map((type) => (
             <CommandItem
               key={type}

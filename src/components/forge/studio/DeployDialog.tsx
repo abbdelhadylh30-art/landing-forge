@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import QRCode from "qrcode"
-import { Check, Copy, ExternalLink, Loader2, QrCode, Rocket, Smartphone } from "lucide-react"
+import { Check, Copy, ExternalLink, Globe, Loader2, QrCode, Rocket, RotateCcw, Smartphone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
@@ -25,11 +25,13 @@ export function DeployDialog() {
   const [deploy, setDeploy] = React.useState<DeployRecord | null>(null)
   const [starting, setStarting] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
+  const [copiedPub, setCopiedPub] = React.useState(false)
   const [qr, setQr] = React.useState<string | null>(null)
   const logRef = React.useRef<HTMLDivElement>(null)
   const status = deploy?.status ?? "queued"
+  const [runId, setRunId] = React.useState(0) // bump to re-run the deploy flow ("Deploy again")
 
-  // Start a deploy when dialog opens
+  // Start a deploy when the dialog opens (or when the user clicks Deploy again)
   React.useEffect(() => {
     if (!open || !projectId) return
     let cancelled = false
@@ -59,7 +61,13 @@ export function DeployDialog() {
     return () => {
       cancelled = true
     }
-  }, [open, projectId, onOpenChange])
+  }, [open, projectId, onOpenChange, runId])
+
+  const deployAgain = () => {
+    setDeploy(null)
+    setStarting(true)
+    setRunId((n) => n + 1)
+  }
 
   // Poll while queued/building
   React.useEffect(() => {
@@ -107,6 +115,18 @@ export function DeployDialog() {
       setCopied(true)
       setTimeout(() => setCopied(false), 1800)
       toast.success("URL copied")
+    } catch {
+      toast.error("Clipboard unavailable")
+    }
+  }
+
+  const publishedUrl = typeof window !== "undefined" ? `${window.location.origin}/?p=${encodeURIComponent(slug)}` : `/?p=${slug}`
+  const copyPublished = async () => {
+    try {
+      await navigator.clipboard.writeText(publishedUrl)
+      setCopiedPub(true)
+      setTimeout(() => setCopiedPub(false), 1800)
+      toast.success("Published link copied 🔗", { description: "Visits there are tracked live in Analytics." })
     } catch {
       toast.error("Clipboard unavailable")
     }
@@ -182,6 +202,47 @@ export function DeployDialog() {
                   <p className="mt-0.5 text-[10px] leading-tight text-zinc-500">Open the live page on your phone</p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* In-app published page — the real, in-sandbox shareable URL */}
+          {status === "live" && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-500/5 p-2.5">
+              <Globe className="h-4 w-4 shrink-0 text-violet-300" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-mono text-[12px] text-violet-200" title={publishedUrl}>
+                  {publishedUrl}
+                </p>
+                <p className="mt-0.5 text-[10px] leading-tight text-zinc-500">In-app published page — real pageviews, CTA clicks & leads are tracked here</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 border-zinc-700 bg-transparent text-[11px] hover:border-violet-500/50 hover:text-violet-200"
+                  onClick={() => void copyPublished()}
+                >
+                  {copiedPub ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} Copy
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 border-zinc-700 bg-transparent text-[11px] hover:border-violet-500/50 hover:text-violet-200"
+                  onClick={() => window.open(`/?p=${encodeURIComponent(slug)}`, "_blank", "noopener")}
+                >
+                  <ExternalLink className="h-3 w-3" /> Open
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Deploy again (explicit re-run instead of implicit reopen) */}
+          {status === "live" && (
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              <p className="text-[10px] text-zinc-600">Build took {((deploy?.durationMs ?? 0) / 1000).toFixed(1)}s · edge cache warm</p>
+              <Button variant="outline" size="sm" className="h-7 gap-1.5 border-zinc-800 bg-zinc-900/60 text-[11px] text-zinc-300 hover:border-violet-500/50 hover:text-violet-200" onClick={deployAgain}>
+                <RotateCcw className="h-3 w-3" /> Deploy again
+              </Button>
             </div>
           )}
         </div>

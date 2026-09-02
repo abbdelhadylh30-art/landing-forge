@@ -52,6 +52,20 @@ export function LandingPreview({
       : null
 
   const visible = config.sections.filter((s) => !s.hidden)
+  // Stable anchor targets: the first section of each type gets an id matching
+  // its type ("features", "pricing", "faq", …) so navbar/CTA links like
+  // href="#pricing" scroll to it — in the published page and exported HTML.
+  // "cta-final" is additionally aliased to "cta" (the default href target).
+  const anchorFor = (() => {
+    const seen = new Set<string>()
+    return (section: Section, index: number): string | undefined => {
+      if (seen.has(section.type)) return undefined
+      seen.add(section.type)
+      if (index > 0 && section.type === "navbar") return undefined // navbar targets are pointless
+      if (section.type === "hero") return "top"
+      return section.type === "cta-final" ? "cta" : section.type
+    }
+  })()
 
   const SelectOverlay = ({ section }: { section: Section }) => (
     <button
@@ -109,6 +123,7 @@ export function LandingPreview({
       className={cn("w-full min-h-full font-sans", selectionMode && "select-none", className)}
     >
       {visible.map((section, i) => {
+        const anchor = anchorFor(section, i)
         if (section.type === "navbar") {
           if (selectionMode) {
             return (
@@ -141,7 +156,7 @@ export function LandingPreview({
         const band = visible.slice(0, i).filter((s) => s.type !== "navbar").length % 2
         const bg = band === 0 ? "var(--lf-bg)" : "var(--lf-bg-alt)"
         return (
-          <div key={section.id} style={{ background: bg }} className={selectionMode ? "relative" : undefined}>
+          <div key={section.id} id={anchor} style={{ background: bg }} className={cn(selectionMode ? "relative" : "scroll-mt-16")}>
             <div className={selectionMode ? "pointer-events-none" : undefined}>
               <SectionRenderer
                 section={section}

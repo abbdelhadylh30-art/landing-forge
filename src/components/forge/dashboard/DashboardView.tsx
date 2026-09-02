@@ -22,6 +22,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
 import type { AnalyticsPayload, LeadRecord } from "@/lib/landing/types"
+import { LeadDetailSheet, downloadLeadsCsv } from "./LeadDetailSheet"
 
 const ACCENT = "#A78BFA"
 const ACCENT2 = "#f0abfc"
@@ -96,6 +97,7 @@ export function DashboardView() {
 
   const [data, setData] = React.useState<AnalyticsPayload | null>(null)
   const [leads, setLeads] = React.useState<LeadRecord[]>([])
+  const [selectedLead, setSelectedLead] = React.useState<LeadRecord | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [seeding, setSeeding] = React.useState(false)
   const [days, setDays] = React.useState("30")
@@ -215,6 +217,15 @@ export function DashboardView() {
                 <SelectItem value="90" className="text-[12px] focus:bg-violet-500/20">Last 90 days</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 text-[11px] text-zinc-200 hover:border-emerald-500/50 hover:text-emerald-200"
+              onClick={() => slug && window.open(`/?p=${encodeURIComponent(slug)}`, "_blank", "noopener")}
+              title="Open the published page — pageviews, CTA clicks and form submits there flow into this dashboard"
+            >
+              <Globe2 className="h-3 w-3 text-emerald-300" /> View live page
+            </Button>
             <Button variant="outline" size="sm" className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 text-[11px] text-zinc-200 hover:border-violet-500/50" onClick={seed} disabled={seeding}>
               {seeding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-amber-300" />} Simulate traffic
             </Button>
@@ -464,9 +475,24 @@ export function DashboardView() {
                 title="Leads inbox"
                 icon={Mail}
                 actions={
-                  <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-violet-300">
-                    {leads.length} {leads.length === 1 ? "submission" : "submissions"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {leads.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          downloadLeadsCsv(leads, projectName || "project")
+                          toast.success("Leads CSV exported 📄", { description: `${leads.length} submissions — one row each, all fields included.` })
+                        }}
+                        className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-1 text-[10px] font-semibold text-zinc-400 transition-colors hover:border-violet-500/40 hover:text-zinc-200"
+                        title="Export all submissions as CSV (spreadsheet-ready)"
+                      >
+                        <Download className="h-3 w-3" /> CSV
+                      </button>
+                    )}
+                    <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-violet-300">
+                      {leads.length} {leads.length === 1 ? "submission" : "submissions"}
+                    </span>
+                  </div>
                 }
               >
                 {leads.length === 0 ? (
@@ -490,8 +516,15 @@ export function DashboardView() {
                       return (
                         <li
                           key={lead.id}
-                          className="group flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 transition-colors hover:border-violet-500/30 hover:bg-zinc-900/80"
+                          className="group"
                         >
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLead(lead)}
+                            className="flex w-full items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 text-left transition-all hover:border-violet-500/30 hover:bg-zinc-900/80 hover:shadow-md hover:shadow-violet-950/20"
+                            aria-label={`Open lead details for ${lead.name || lead.email || "anonymous submission"}`}
+                            title="Open full submission details"
+                          >
                           <span
                             className="flex size-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-[11px] font-bold text-zinc-100"
                             style={{ background: `hsl(${hue} 45% 22%)` }}
@@ -510,6 +543,7 @@ export function DashboardView() {
                                 href={`mailto:${lead.email}`}
                                 className="mt-0.5 block truncate text-[11px] text-violet-300/90 underline-offset-2 hover:underline"
                                 title={`Email ${lead.email}`}
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 {lead.email}
                               </a>
@@ -519,7 +553,11 @@ export function DashboardView() {
                                 {lead.message}
                               </p>
                             )}
+                            <span className="mt-1.5 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-violet-400/0 transition-colors group-hover:text-violet-400/70">
+                              View details →
+                            </span>
                           </div>
+                          </button>
                         </li>
                       )
                     })}
@@ -553,6 +591,9 @@ export function DashboardView() {
           </>
         )}
       </div>
+
+      {/* Lead detail drawer — full submission + reply actions */}
+      <LeadDetailSheet lead={selectedLead} open={selectedLead !== null} onOpenChange={(o) => !o && setSelectedLead(null)} />
     </div>
   )
 }

@@ -10,6 +10,7 @@ export type DialogId =
   | "export-yaml"
   | "import-yaml"
   | "export-html"
+  | "add-section"
   | "deploy"
   | "readiness"
   | "shortcuts"

@@ -11,6 +11,8 @@ import { TEMPLATES } from "@/lib/landing/defaults"
 import { StudioShell } from "@/components/forge/studio/StudioShell"
 import { DashboardView } from "@/components/forge/dashboard/DashboardView"
 import { ProjectsView } from "@/components/forge/projects/ProjectsView"
+import { PublishedPage } from "@/components/forge/published/PublishedPage"
+import { AddSectionDialog } from "@/components/forge/studio/AddSectionDialog"
 import { useSaveProject } from "@/components/forge/studio/useSaveProject"
 import { CommandPalette, ShortcutsDialog } from "@/components/forge/studio/CommandPalette"
 import { ReadinessDialog } from "@/components/forge/studio/ReadinessPanel"
@@ -31,6 +33,10 @@ export default function Home() {
   const view = useUi((s) => s.view)
   const setView = useUi((s) => s.setView)
   const [booting, setBooting] = React.useState(true)
+  // "published" page mode: /?p=<slug> renders the project's saved config as a
+  // live visitor page (real pageview/CTA/form tracking) instead of the studio.
+  // undefined = checking location.search on mount; null = normal studio mode.
+  const [publishedSlug, setPublishedSlug] = React.useState<string | null | undefined>(undefined)
   const loadProject = useForge((s) => s.loadProject)
   const dirty = useForge((s) => s.dirty)
   const config = useForge((s) => s.config)
@@ -39,8 +45,15 @@ export default function Home() {
   const saving = useForge((s) => s.saving)
   const report = React.useMemo(() => auditConfig(config), [config])
 
-  // ── Bootstrap: load last project or create the demo project ──────────────
+  // ── Detect ?p=<slug> (published page mode) before booting the studio ─────
   React.useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("p")
+    setPublishedSlug(p ? p.trim().toLowerCase().slice(0, 60) : null)
+  }, [])
+
+  // ── Bootstrap: load last project or create the demo project (studio only) ──
+  React.useEffect(() => {
+    if (publishedSlug !== null) return // published mode (or still checking) — no studio bootstrap
     let cancelled = false
     ;(async () => {
       try {
@@ -83,10 +96,11 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [loadProject])
+  }, [loadProject, publishedSlug])
 
-  // ── ⌘S / Ctrl+S saves ────────────────────────────────────────────────────
+  // ── ⌘S / Ctrl+S saves (studio mode only) ──────────────────────────────────
   React.useEffect(() => {
+    if (publishedSlug !== null) return
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault()
@@ -95,7 +109,7 @@ export default function Home() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [save])
+  }, [save, publishedSlug])
 
   // ── Autosave: 3s after the last edit (debounced), save silently ──────────
   // `save` is re-created on each store change, which re-arms the timer —
@@ -117,6 +131,9 @@ export default function Home() {
     window.addEventListener("beforeunload", onBeforeUnload)
     return () => window.removeEventListener("beforeunload", onBeforeUnload)
   }, [dirty])
+
+  // ── Published page mode: render the visitor view, nothing else ────────────
+  if (typeof publishedSlug === "string") return <PublishedPage slug={publishedSlug} />
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-zinc-950 text-zinc-100">
@@ -205,6 +222,7 @@ export default function Home() {
       <ExportYamlDialog />
       <ImportYamlDialog />
       <ExportHtmlDialog />
+      <AddSectionDialog />
       <DeployDialog />
       <ReadinessDialog />
       <ShortcutsDialog />

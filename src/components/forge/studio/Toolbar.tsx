@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Command as CommandIcon, Code2, Download, Palette, Redo2, Rocket, Save, Sparkles, Undo2, Upload, Wand2 } from "lucide-react"
+import { Command as CommandIcon, Code2, Download, Globe, Palette, Redo2, Rocket, Save, Sparkles, Undo2, Upload, Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,6 +17,7 @@ import { useUi } from "@/lib/landing/uiStore"
 import { THEMES } from "@/lib/landing/themes"
 import { ReadinessChip } from "./ReadinessPanel"
 import { useSaveProject } from "./useSaveProject"
+import { toast } from "sonner"
 
 /** Relative "saved X ago" label that self-refreshes (used inside the Save button). */
 function SavedAgo({ at }: { at: number }) {
@@ -44,6 +45,14 @@ export function Toolbar() {
   const setCommandOpen = useUi((s) => s.setCommandOpen)
   const setView = useUi((s) => s.setView)
   const { save, saving, hasProject, lastSavedAt } = useSaveProject()
+  const slug = useForge((s) => s.project.slug)
+
+  const openPublished = () => {
+    window.open(`/?p=${encodeURIComponent(slug)}`, "_blank", "noopener")
+    toast.info("Published page opened 🔗", {
+      description: "Visits, CTA clicks and form submits there are recorded live — refresh Analytics to see them.",
+    })
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/80 bg-zinc-950 px-3 py-2">
@@ -163,6 +172,19 @@ export function Toolbar() {
           <Save className={cn("h-3 w-3", dirty && "text-amber-300", !dirty && !saving && "text-emerald-400/80")} />
           {saving ? "Saving…" : dirty ? "Save*" : "Saved"}
           {!saving && !dirty && lastSavedAt && <SavedAgo at={lastSavedAt} />}
+        </Button>
+
+        {/* Published page — real visitor tracking */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={openPublished}
+          disabled={!hasProject}
+          title="Open the published page — a shareable URL where real visits are tracked (pageviews, CTA clicks, leads)"
+          className="lf-focus h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-300 hover:border-emerald-500/50 hover:text-emerald-200"
+        >
+          <Globe className="h-3 w-3" />
+          <span className="hidden lg:inline">Published</span>
         </Button>
 
         {/* Deploy */}

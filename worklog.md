@@ -335,3 +335,80 @@ Next-phase priority order:
 3. **Leads CSV export + lead detail drawer** (full field map) in the analytics view.
 4. **Image library panel** — list/reuse/delete generated images across sections.
 5. Smaller: mobile pane switcher polish, deploy dialog "Deploy again" button (currently a new deploy auto-starts on every open — fine but implicit), promote-winner flow toast after undo hint.
+
+---
+Task ID: R8
+Agent: main (Z.ai Code) — round 8
+Task: Assess status, QA via agent-browser, then ship the handover's top-3 next-phase features + polish (published page mode, content packs, leads CSV + drawer)
+
+Work Log:
+- Status assessment (agent-browser, 1440×900 + 390×844): STABLE — 0 page errors, 0 console errors, all views render, VLM 9/10 on analytics + mobile projects. No fixes needed → proceeded to the R7 handover's priority list.
+- NEW FEATURE 1 — Published page mode `/?p=<slug>` (priority #1 from handover):
+  - New component src/components/forge/published/PublishedPage.tsx. page.tsx reads `?p=` in a mount effect BEFORE the studio bootstrap (bootstrap gated on publishedSlug===null; ⌘S handler gated too; `typeof publishedSlug === "string"` → early-return the visitor view).
+  - Loads project by slug via 2-step fetch (GET /api/projects → match slug → GET /api/projects/[id]) — renders the last SAVED config, i.e. true "published" semantics.
+  - REAL visitor tracking: pageview once per visit (device/browser/visitorId), weighted A/B variant assignment persisted in localStorage (`lf-ab-assign-<projectId>`) + variant_exposure event, CTA clicks tracked with the assigned variant, form submits → form_submit event + POST /api/leads.
+  - Visitor chrome: floating glass pill — live pulse dot, project name, session telemetry (time-on-page ticker, click count, events sent, messages sent), Copy link, Studio link, privacy footnote; collapses to a "N tracked" FAB.
+  - document.title set from project SEO title; dedicated loading / 404 ("no page published at this address") / error states.
+  - Entry points wired everywhere: Toolbar "Published" button (emerald hover), ⌘K palette "Open published page (live tracking)", Analytics header "View live page", DeployDialog live row (below). 
+- NEW FEATURE 2 — Section content packs (priority #2):
+  - src/lib/landing/contentPacks.ts — 35 packs across all 12 section types (navbar 3, hero 4, logos 2, features 4, stats 2, testimonials 4, pricing 3, faq 3, gallery 2, contact 2, cta-final 3, footer 3), each a shallow-merged Partial<Section> patch with name/description/meta chips.
+  - store.addSection(type, atIndex?, pack?) — merges the pack over createSection(type); same Partial<Section> semantics as the properties panel.
+  - New AddSectionDialog (dialog id "add-section"): filter input (matches types AND pack names/descriptions), left type list w/ per-type pack counts, right pack cards (default badge, meta chips, hover lift + insert icon); inserts before footer/cta-final; toast confirms. SectionsPanel "Add section" button now opens the dialog (replaced the 12-item dropdown); button shows the live pack count.
+  - ⌘K palette gains "Browse content packs…" above the quick-add group (quick default adds still work).
+- NEW FEATURE 3 — Leads CSV export + detail drawer (priority #3):
+  - New dashboard/LeadDetailSheet.tsx: shadcn Sheet (right) — avatar w/ deterministic hue, name, medium datetime, "Reply by email" (mailto w/ subject) + "Copy email" actions, message card, identity rows, full field map as a striped key/value table, lead-id footnote.
+  - Leads inbox cards are now buttons (whole card clickable → drawer, mailto link stopPropagation preserved); hover ring + shadow + "View details →" affordance.
+  - CSV: client-side export (downloadLeadsCsv) — columns = fixed meta (id/created_at/name/email/message) + union of all submitted field keys, RFC-escaped; "CSV" button in panel actions; toast confirms count.
+- Styling/detail polish (mandatory):
+  - Anchor navigation: LandingPreview now stamps stable ids on the FIRST section of each type (hero→#top, features, testimonials, pricing, faq, contact, cta-final→#cta, …) + scroll-mt-16, so navbar/CTA hrefs actually smooth-scroll on the published page AND exported HTML (export.css regenerated via tailwindcss CLI, 155KB).
+  - PublishedPage container gets [scroll-behavior:smooth].
+  - DeployDialog: new violet "In-app published page" row when live (URL + Copy + Open), "Deploy again" button (runId state re-runs the pipeline explicitly — resolves the handover's "implicit re-deploy on open" note), "Build took Xs · edge cache warm" caption.
+- QA (agent-browser sessions r8-qa / r8-regress):
+  ✓ Published page: 404 state (bad slug), real render w/ SEO title, pageview + variant_exposure (A) recorded, CTA click → `cta_click hero: Start Your Journey (v A)` in recent events, contact form submit → Lead "Rania Farouk" persisted + form_submit; anchor #pricing scrolls (2394px, pricing visible w/ navbar offset); mobile 390px 0 overflow + chrome renders; VLM 9/10 top + 9/10 mobile.
+  ✓ Content packs: dialog opens from panel + palette; filter ("event" → Hero only); Pricing type → 3 cards; add "Simple 2-tier" → new Pricing section with "Two plans. Pick one." content, inserted before Final CTA; Ctrl+Z removed it (undo intact; earlier "20 rows" reading was panel+preview overlay double-counting, not a bug).
+  ✓ Leads: drawer opens w/ full field map + message; CSV button → toast "15 submissions" + blob download.
+  ✓ Deploy: live → QR + emerald URL row + violet published row + Deploy again; "Deploy again" resets terminal and re-runs to Live.
+  ✓ HTML export dialog still builds after LandingPreview changes; palette contains both new entries.
+  ✓ Fresh studio session: 0 errors, 0 console warnings; VLM studio 9/10.
+  ✓ bun run lint 0/0; bunx tsc --noEmit clean for app code (only pre-existing examples/skills errors); dev server healthy throughout.
+- Cleaned up temporary QA screenshots from the project root.
+
+Stage Summary:
+- Analytics is now LIVE, not simulated: the published page records real pageviews/CTA clicks/leads that appear in the dashboard after refresh — the app's core loop (build → publish → measure) is closed end-to-end.
+- "30+ templates" story fully realized: 35 content packs + 30+ layout/style variants across 12 section types.
+- Leads inbox upgraded from read-only list to a working mini-CRM (detail drawer, reply, copy, CSV).
+- Deploy dialog surfaces the real in-app published URL alongside the simulated edge URL.
+- All work verified end-to-end; no open bugs; lint/tsc clean.
+
+---
+Task ID: R8-HANDOVER
+Agent: main (Z.ai Code)
+Task: Round 8 handover — status / goals / risks & next priorities
+
+## 1. Current project status assessment
+- **Stable, feature-complete, and now end-to-end live.** Dev server healthy (port 3000), `bun run lint` 0/0, `tsc --noEmit` clean for app code, 0 console/page errors on fresh sessions, dev.log clean.
+- All R8 features verified through the full loop: published page records REAL analytics (pageview → A/B exposure → CTA clicks w/ variant → form submits + leads) that show up in the dashboard; 35 content packs add real depth; leads inbox is a working mini-CRM with CSV + detail drawer.
+- QA scores this round: published page 9/10 (desktop + mobile), studio 9/10, analytics 9/10, lead sheet 8.5/10 — no actionable defects found.
+
+## 2. Current goals / completed modifications / verification results
+Goals were: QA-first triage (project was already stable → no fixes needed) → ship the R7 handover's top-3 priorities + mandatory polish.
+- Published page mode `/?p=<slug>`: page.tsx branches before studio bootstrap; PublishedPage renders the last SAVED config with visitor chrome (live pill w/ session telemetry, Copy link, Studio link, collapsible FAB), real tracking incl. weighted+persisted A/B assignment, SEO title, loading/404/error states. Entry points: Toolbar, ⌘K palette, Analytics header, Deploy dialog. VERIFIED end-to-end incl. lead "Rania Farouk" from a real published-page submit.
+- Content packs: contentPacks.ts (35 packs/12 types), store.addSection(type, at?, pack?), AddSectionDialog (filter + type list + pack cards, inserts before footer), SectionsPanel button opens it, palette "Browse content packs…". VERIFIED: filter, type switch, "Simple 2-tier" patch landed ("Two plans. Pick one."), undo removed it.
+- Leads: LeadDetailSheet (full field map, reply/copy), clickable inbox cards, CSV export (union-of-fields columns, escaped, blob download). VERIFIED: drawer content + CSV toast (15 submissions).
+- Polish: stable per-type anchor ids + scroll-mt-16 + smooth scroll (navbar `#pricing` scrolls on published page AND in exported HTML — export.css regenerated, 155KB); DeployDialog gains the violet in-app published row + explicit "Deploy again" (runId re-run) + "Build took Xs" caption.
+
+## 3. Unresolved issues / risks + next-phase priorities
+Known limitations (all intentional/illustrative or low-priority):
+- Published-page pageviews are recorded with isBounce=true + duration 0 (the ingest API creates rows, it can't update them later); bounce-rate contributions from published visits are therefore conservative. A "PATCH /api/analytics/track" for duration/engagement would fix this.
+- The published page shows the last SAVED config; unsaved studio edits aren't reflected (correct semantics, worth a hint text if users report confusion).
+- A/B variant assignment is per-browser (localStorage), not per-visitor-session; the same browser always sees the same variant for a project.
+- export.css is a build-time artifact — REGENERATE (`bun x @tailwindcss/cli -i src/app/globals.css -o src/lib/landing/export.css --minify`) after adding classes to preview components (done this round).
+- Simulated deploy URL/QR still points to a non-existent host (illustrative); the in-app published URL is the real one and is now surfaced next to it.
+- Image library (list/reuse/delete generated images) and visitor-map live updates remain unimplemented (handover #4 from R7).
+
+Next-phase priority order:
+1. **Engagement ping / duration tracking on the published page** (extend the track API with an update path) so time-on-page and bounce reflect real behavior.
+2. **Image library panel** — browse/reuse/delete public/uploads images across hero & gallery editors.
+3. **Live analytics refresh** — poll or WebSocket push so the dashboard updates while a visitor is on the published page (mini-service + `?XTransformPort=` gateway per platform rules).
+4. **Mobile pane switcher polish** for the studio (the 3-panel layout is desktop-first).
+5. Smaller: section-level anchor override field in properties panel (currently derived from type); "Copy published link" in Projects view cards.

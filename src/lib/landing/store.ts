@@ -37,7 +37,8 @@ interface ForgeState {
 
   setConfig: (next: LandingConfig, opts?: { silent?: boolean }) => void
   updateSection: (id: string, patch: Partial<Section>) => void
-  addSection: (type: SectionType, atIndex?: number) => string
+  /** `pack` is a content-pack patch shallow-merged over the default section. */
+  addSection: (type: SectionType, atIndex?: number, pack?: Record<string, unknown>) => string
   removeSection: (id: string) => void
   duplicateSection: (id: string) => void
   moveSection: (from: number, to: number) => void
@@ -124,8 +125,8 @@ export const useForge = create<ForgeState>((set, get) => ({
       return { ...pushHistory(s), config: next, dirty: true }
     }),
 
-  addSection: (type, atIndex) => {
-    const sec = createSection(type)
+  addSection: (type, atIndex, pack) => {
+    const sec = { ...createSection(type), ...(pack ?? {}) } as Section
     set((s) => {
       const next = clone(s.config)
       const insertAt = atIndex ?? next.sections.length

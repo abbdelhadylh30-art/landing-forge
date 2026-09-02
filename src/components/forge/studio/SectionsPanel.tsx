@@ -20,17 +20,11 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { Copy, Eye, EyeOff, GripVertical, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
-import { SECTION_META, SECTION_TYPES } from "@/lib/landing/types"
+import { useUi } from "@/lib/landing/uiStore"
+import { SECTION_META } from "@/lib/landing/types"
+import { CONTENT_PACK_COUNT } from "@/lib/landing/contentPacks"
 import type { Section } from "@/lib/landing/types"
 
 function SortableRow({ section, index }: { section: Section; index: number }) {
@@ -124,7 +118,7 @@ function SortableRow({ section, index }: { section: Section; index: number }) {
 export function SectionsPanel({ className }: { className?: string }) {
   const sections = useForge((s) => s.config.sections)
   const moveSection = useForge((s) => s.moveSection)
-  const addSection = useForge((s) => s.addSection)
+  const openDialog = useUi((s) => s.openDialog)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -167,30 +161,15 @@ export function SectionsPanel({ className }: { className?: string }) {
         )}
       </div>
       <div className="border-t border-zinc-900 p-2.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 w-full border-dashed border-zinc-700 bg-transparent text-[12px] text-zinc-300 hover:border-violet-500/60 hover:text-violet-200">
-              <Plus className="mr-1 h-3.5 w-3.5" /> Add section
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64 border-zinc-800 bg-zinc-900 text-zinc-100">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-zinc-500">30+ layout templates inside</DropdownMenuLabel>
-            {SECTION_TYPES.map((t) => (
-              <DropdownMenuItem
-                key={t}
-                className="gap-2.5 py-2 text-[12px] focus:bg-violet-500/20"
-                onClick={() => addSection(t)}
-              >
-                <span className="text-base leading-none">{SECTION_META[t].icon}</span>
-                <span className="flex-1">
-                  <span className="block font-medium">{SECTION_META[t].label}</span>
-                  <span className="block text-[10px] text-zinc-500">{SECTION_META[t].description}</span>
-                </span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator className="bg-zinc-800" />
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 w-full gap-1.5 border-dashed border-zinc-700 bg-transparent text-[12px] text-zinc-300 transition-all hover:border-violet-500/60 hover:bg-violet-500/5 hover:text-violet-200"
+          onClick={() => openDialog("add-section")}
+        >
+          <Plus className="h-3.5 w-3.5" /> Add section
+          <span className="ml-auto rounded-full border border-zinc-700 px-1.5 py-px font-mono text-[9px] text-zinc-500">{CONTENT_PACK_COUNT} packs</span>
+        </Button>
       </div>
     </div>
   )
