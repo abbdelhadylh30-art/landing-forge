@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Maximize2, Minimize2, Monitor, Smartphone, Tablet } from "lucide-react"
+import { EyeOff, Maximize2, Minimize2, Monitor, Smartphone, Tablet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -78,10 +78,24 @@ export function DevicePreview({ className }: { className?: string }) {
   const handleFormSubmit = (section: Section, data: Record<string, string>) => {
     if (!projectId) return
     track(projectId, { type: "form_submit", label: `${section.type}: ${Object.keys(data).join(", ")}` })
-    toast.success("Form submission tracked ✉️", { description: `${Object.keys(data).length} fields captured` })
+    // Persist the submission as a lead (leads inbox in the analytics view)
+    void fetch("/api/leads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId, fields: data }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j?.lead) {
+          const lead = j.lead as { name?: string; email?: string }
+          toast.success("Lead captured 📥", { description: `${lead.name || lead.email || "New contact"} — see Analytics → Leads inbox` })
+        }
+      })
+      .catch(() => undefined) // lead capture is best-effort; the event above is the source of truth
   }
 
   const width = DEVICE_WIDTHS[device]
+  const visibleCount = config.sections.filter((s) => !s.hidden).length
 
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-col bg-zinc-900/40", className)}>
@@ -166,14 +180,29 @@ export function DevicePreview({ className }: { className?: string }) {
             className="relative min-h-0 w-full overflow-y-auto rounded-xl border border-zinc-800 shadow-2xl shadow-black/40 lf-scroll"
             style={width ? { width, maxWidth: "100%", margin: "0 auto" } : undefined}
           >
-            <LandingPreview
-              config={config}
-              abVariant={abVariant}
-              selectionMode
-              selectedSectionId={selectedSectionId}
-              onSectionSelect={selectSection}
-              className="min-h-full"
-            />
+            {visibleCount === 0 ? (
+              <div className="flex min-h-full flex-col items-center justify-center gap-3 p-10 text-center">
+                <div className="flex size-12 items-center justify-center rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/60">
+                  <EyeOff className="h-5 w-5 text-zinc-600" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-zinc-300">Nothing to preview</p>
+                  <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-zinc-500">
+                    Every section is hidden. Unhide one in the Sections list (eye icon) or add a new section to start
+                    building.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <LandingPreview
+                config={config}
+                abVariant={abVariant}
+                selectionMode
+                selectedSectionId={selectedSectionId}
+                onSectionSelect={selectSection}
+                className="min-h-full"
+              />
+            )}
           </div>
         </div>
       )}

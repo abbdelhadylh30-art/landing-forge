@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   BarChart3,
   Check,
+  Code2,
   Command as CommandIcon,
   Download,
   Eye,
@@ -130,6 +131,25 @@ export function CommandPalette() {
         useUi.getState().openDialog("deploy")
         return
       }
+      // ⌘Z / ⇧⌘Z undo-redo (the toolbar tooltips promise it)
+      if (mod && key === "z" && !e.shiftKey) {
+        const target = e.target as HTMLElement | null
+        const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable
+        if (!typing) {
+          e.preventDefault()
+          useForge.getState().undo()
+        }
+        return
+      }
+      if (mod && (key === "z" || key === "y") && e.shiftKey) {
+        const target = e.target as HTMLElement | null
+        const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable
+        if (!typing) {
+          e.preventDefault()
+          useForge.getState().redo()
+        }
+        return
+      }
       // "?" opens shortcuts — only when not typing
       const target = e.target as HTMLElement | null
       const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable
@@ -192,6 +212,9 @@ export function CommandPalette() {
           <CommandItem className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100" onSelect={() => run(() => openDialog("export-yaml"))}>
             <Download className="h-4 w-4 text-zinc-400" /> Export YAML…
             <CommandShortcut>{MOD}E</CommandShortcut>
+          </CommandItem>
+          <CommandItem className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100" onSelect={() => run(() => openDialog("export-html"))}>
+            <Code2 className="h-4 w-4 text-zinc-400" /> Export standalone HTML…
           </CommandItem>
           <CommandItem className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100" onSelect={() => run(() => openDialog("import-yaml"))}>
             <Upload className="h-4 w-4 text-zinc-400" /> Import YAML…

@@ -84,7 +84,17 @@ export function LandingPreview({
     >
       {selectedSectionId === section.id && (
         <span
-          className="absolute left-3 top-3 z-40 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+          className={cn(
+            "absolute z-40 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-md shadow-black/30",
+            // Compact sections (navbar) have no empty corner (brand left, CTA
+            // right, links center) — the badge straddles the bottom border,
+            // centered, where it only covers the next section's top padding.
+            // No pop-in animation here: its keyframe transform would clobber
+            // the positioning translates (animation fill-mode wins the cascade).
+            section.type === "navbar"
+              ? "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2"
+              : "lf-label-badge left-3 top-3"
+          )}
           style={{ background: "var(--lf-accent)", color: "var(--lf-accent-contrast)" }}
         >
           {SECTION_META[section.type].label}

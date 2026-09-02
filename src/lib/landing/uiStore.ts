@@ -9,6 +9,7 @@ export type DialogId =
   | "ai-improve"
   | "export-yaml"
   | "import-yaml"
+  | "export-html"
   | "deploy"
   | "readiness"
   | "shortcuts"

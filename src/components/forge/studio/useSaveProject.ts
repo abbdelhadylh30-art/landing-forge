@@ -11,9 +11,9 @@ export function useSaveProject() {
   const setSaving = useForge((s) => s.setSaving)
   const markSaved = useForge((s) => s.markSaved)
 
-  const save = async () => {
+  const save = async (opts?: { silent?: boolean }) => {
     if (!project.id) {
-      toast.error("No project loaded yet")
+      if (!opts?.silent) toast.error("No project loaded yet")
       return
     }
     setSaving(true)
@@ -25,13 +25,15 @@ export function useSaveProject() {
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `Save failed (${res.status})`)
       markSaved()
-      toast.success("Project saved 💾", { description: project.name })
+      if (!opts?.silent) toast.success("Project saved 💾", { description: project.name })
     } catch (e) {
-      toast.error("Save failed", { description: e instanceof Error ? e.message : undefined })
+      if (!opts?.silent) {
+        toast.error("Save failed", { description: e instanceof Error ? e.message : undefined })
+      }
     } finally {
       setSaving(false)
     }
   }
 
-  return { save, saving, dirty: useForge((s) => s.dirty), hasProject: Boolean(project.id) }
+  return { save, saving, dirty: useForge((s) => s.dirty), hasProject: Boolean(project.id), lastSavedAt: useForge((s) => s.lastSavedAt) }
 }

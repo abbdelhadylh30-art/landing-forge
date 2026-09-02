@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronsUpDown, Eye, EyeOff, GripVertical, Plus, Trash2, Copy, ArrowUp, ArrowDown } from "lucide-react"
+import { ChevronsUpDown, Eye, EyeOff, GripVertical, Plus, Sparkles, Trash2, Copy, ArrowUp, ArrowDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
 import { THEMES } from "@/lib/landing/themes"
@@ -33,6 +34,106 @@ import type {
 } from "@/lib/landing/types"
 
 // ─── Field primitives ────────────────────────────────────────────────────────
+
+/** Image URL field with AI generation: prompt input + generate button + thumb. */
+function AiImageField({
+  label,
+  value,
+  onChange,
+  suggestion,
+  size,
+}: {
+  label: string
+  value?: string
+  onChange: (src: string) => void
+  suggestion: string
+  size?: "1024x1024" | "768x1344" | "864x1152" | "1344x768" | "1152x864" | "1440x768" | "768x1440"
+}) {
+  const [prompt, setPrompt] = React.useState(suggestion)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState("")
+  // keep the prompt in sync when the parent suggestion changes (item switch)
+  React.useEffect(() => {
+    setPrompt(suggestion)
+  }, [suggestion])
+
+  const generate = async () => {
+    if (!prompt.trim() || loading) return
+    setLoading(true)
+    setError("")
+    try {
+      const res = await fetch("/api/ai/image", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: prompt.trim(), size }),
+      })
+      const data = (await res.json()) as { url?: string; error?: string }
+      if (!res.ok || !data.url) throw new Error(data.error ?? "Image generation failed")
+      onChange(data.url)
+      toast.success("Image generated ✨", { description: "Applied to the section — undo if you dislike it." })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Image generation failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Field label={label} hint={error || undefined}>
+      <div className="flex gap-1.5">
+        <Input
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://… (or generate with AI)"
+          className="h-8 border-zinc-700/80 bg-zinc-900/60 font-mono text-xs text-zinc-100 focus-visible:ring-violet-500/60"
+        />
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 shrink-0 border-violet-500/40 text-violet-300 hover:border-violet-500/70 hover:bg-violet-500/10 hover:text-violet-100"
+          onClick={() => void generate()}
+          disabled={loading || !prompt.trim()}
+          title="Generate an image with AI from the prompt below"
+          aria-label="Generate image with AI"
+        >
+          {loading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-400/30 border-t-violet-300" /> : <Sparkles className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
+      <div className="flex gap-1.5">
+        <Input
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="AI prompt — describe the image…"
+          maxLength={600}
+          className="h-7 border-zinc-800 bg-zinc-900/40 text-[11px] text-zinc-300 placeholder:text-zinc-600 focus-visible:ring-violet-500/40"
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-[10px] text-violet-300 hover:bg-violet-500/10 hover:text-violet-100"
+          onClick={() => setPrompt(suggestion)}
+          title="Reset prompt to the suggested default"
+        >
+          Reset
+        </Button>
+      </div>
+      {value ? (
+        <div className="flex items-center gap-2">
+          <img src={value} alt="Section image preview" className="h-12 w-20 rounded-md border border-zinc-800 object-cover" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-[10px] text-zinc-500 hover:text-rose-300"
+            onClick={() => onChange("")}
+            title="Remove the image (falls back to generated art)"
+          >
+            <Trash2 className="h-3 w-3" /> Remove
+          </Button>
+        </div>
+      ) : null}
+    </Field>
+  )
+}
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -350,6 +451,7 @@ function NavbarEditor({ section, update }: EditorProps<NavbarSection>) {
 }
 
 function HeroEditor({ section, update }: EditorProps<HeroSection>) {
+  const brand = useForge((s) => s.config.brand)
   const hasSecondary = Boolean(section.secondaryCta?.label)
   const ab = section.ab
   const totalWeight = ab?.variants.reduce((s, v) => s + v.weight, 0) ?? 0
@@ -377,7 +479,13 @@ function HeroEditor({ section, update }: EditorProps<HeroSection>) {
           <Plus className="mr-1 h-3 w-3" /> Add secondary CTA
         </Button>
       )}
-      <TextField label="Image URL" value={section.image ?? ""} onChange={(v) => update({ image: v })} placeholder="https://… (empty = generated mockup)" mono />
+      <AiImageField
+        label="Hero image"
+        value={section.image ?? ""}
+        onChange={(image) => update({ image })}
+        suggestion={`Wide hero marketing shot for ${brand.name}: ${section.badge || section.headline || brand.tagline || "product"}. Modern, premium, cinematic lighting, on-theme.`}
+        size="1440x768"
+      />
       <ListEditor
         label="Trust stats"
         items={section.stats ?? []}
@@ -712,6 +820,7 @@ function FaqEditor({ section, update }: EditorProps<FaqSection>) {
 }
 
 function GalleryEditor({ section, update }: EditorProps<GallerySection>) {
+  const brandName = useForge((s) => s.config.brand.name)
   return (
     <div className="space-y-4">
       <TextField label="Title" value={section.title ?? ""} onChange={(v) => update({ title: v })} />
@@ -734,7 +843,14 @@ function GalleryEditor({ section, update }: EditorProps<GallerySection>) {
         addLabel="Add image"
         renderFields={(g, u) => (
           <div className="space-y-2">
-            <TextField label="Image URL (optional)" value={g.src ?? ""} onChange={(src) => u({ src })} placeholder="https://…" mono />
+            <AiImageField
+              key={`${g.alt}-${g.caption ?? ""}`}
+              label="Image"
+              value={g.src ?? ""}
+              onChange={(src) => u({ src })}
+              suggestion={`Marketing photo of ${g.caption?.trim() || g.alt}: ${brandName} product in a premium real-world setting, rich detail, shallow depth of field.`}
+              size="1152x864"
+            />
             <div className="grid grid-cols-2 gap-2">
               <Input value={g.alt} onChange={(e) => u({ alt: e.target.value })} placeholder="Alt text" className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />
               <Input value={g.caption ?? ""} onChange={(e) => u({ caption: e.target.value })} placeholder="Caption" className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />

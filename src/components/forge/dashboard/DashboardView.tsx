@@ -15,13 +15,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { BarChart3, Crown, Download, Globe2, Loader2, MousePointerClick, Sparkles, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
+import { BarChart3, Crown, Download, Globe2, Loader2, Mail, MonitorSmartphone, MousePointerClick, Sparkles, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
-import type { AnalyticsPayload } from "@/lib/landing/types"
+import type { AnalyticsPayload, LeadRecord } from "@/lib/landing/types"
 
 const ACCENT = "#A78BFA"
 const ACCENT2 = "#f0abfc"
@@ -95,6 +95,7 @@ export function DashboardView() {
   const sections = useForge((s) => s.config.sections)
 
   const [data, setData] = React.useState<AnalyticsPayload | null>(null)
+  const [leads, setLeads] = React.useState<LeadRecord[]>([])
   const [loading, setLoading] = React.useState(true)
   const [seeding, setSeeding] = React.useState(false)
   const [days, setDays] = React.useState("30")
@@ -111,6 +112,13 @@ export function DashboardView() {
     } finally {
       setLoading(false)
     }
+    try {
+      const res = await fetch(`/api/leads?projectId=${projectId}&take=50`)
+      const out = (await res.json()) as { leads?: LeadRecord[] }
+      setLeads(out.leads ?? [])
+    } catch {
+      /* leads inbox is best-effort */
+    }
   }, [projectId, days])
 
   React.useEffect(() => {
@@ -126,9 +134,9 @@ export function DashboardView() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ projectId, days: Number(days) }),
       })
-      const out = (await res.json()) as { pageviews?: number; events?: number; error?: string }
+      const out = (await res.json()) as { pageviews?: number; events?: number; leads?: number; error?: string }
       if (!res.ok) throw new Error(out.error)
-      toast.success("Demo traffic generated 🌍", { description: `${fmtNum(out.pageviews ?? 0)} pageviews · ${fmtNum(out.events ?? 0)} events` })
+      toast.success("Demo traffic generated 🌍", { description: `${fmtNum(out.pageviews ?? 0)} pageviews · ${fmtNum(out.events ?? 0)} events · ${out.leads ?? 0} leads` })
       await load()
     } catch (e) {
       toast.error("Seeding failed", { description: e instanceof Error ? e.message : undefined })
@@ -297,7 +305,7 @@ export function DashboardView() {
             <div className="lf-fade-up-stagger grid gap-4 lg:grid-cols-3">
               {/* Devices */}
               <div style={{ animationDelay: "380ms" }}>
-                <PanelCard title="Devices" icon={BarChart3}>
+                <PanelCard title="Devices" icon={MonitorSmartphone}>
                   <div className="flex h-44 items-center">
                     <div className="h-full w-1/2">
                       <ResponsiveContainer width="100%" height="100%">
@@ -379,7 +387,10 @@ export function DashboardView() {
                     {data!.funnel.map((f, i) => (
                       <li key={f.label}>
                         <div className="mb-1 flex justify-between text-[11px]">
-                          <span className="text-zinc-300">{i + 1}. {f.label}</span>
+                          <span className="text-zinc-300" title={i === 1 ? "Counts each section interaction — can exceed pageviews by design" : undefined}>
+                            {i + 1}. {f.label}
+                            {i === 1 && <span className="ml-1 text-[9px] text-zinc-600">(interactions)</span>}
+                          </span>
                           <span className="font-mono text-zinc-400">
                             {fmtNum(f.count)} · {Math.round((f.count / funnelMax) * 100)}%
                           </span>
@@ -445,6 +456,76 @@ export function DashboardView() {
                   )}
                 </PanelCard>
               </div>
+            </div>
+
+            {/* Leads inbox — contact form submissions */}
+            <div className="lf-fade-up" style={{ animationDelay: "640ms" }}>
+              <PanelCard
+                title="Leads inbox"
+                icon={Mail}
+                actions={
+                  <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-violet-300">
+                    {leads.length} {leads.length === 1 ? "submission" : "submissions"}
+                  </span>
+                }
+              >
+                {leads.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-center">
+                    <Mail className="h-6 w-6 text-zinc-700" />
+                    <p className="text-[12px] text-zinc-500">No form submissions yet.</p>
+                    <p className="max-w-xs text-[10px] text-zinc-600">
+                      Open “Test preview” in the Studio and submit the contact form — every submission lands here as a lead.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="grid max-h-96 gap-2 overflow-y-auto lf-scroll pr-1 sm:grid-cols-2">
+                    {leads.map((lead) => {
+                      const initials = (lead.name || lead.email || "?")
+                        .split(/[\s.@]+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((w) => w[0]?.toUpperCase())
+                        .join("")
+                      const hue = (lead.id.charCodeAt(0) * 13) % 360
+                      return (
+                        <li
+                          key={lead.id}
+                          className="group flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 transition-colors hover:border-violet-500/30 hover:bg-zinc-900/80"
+                        >
+                          <span
+                            className="flex size-9 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-[11px] font-bold text-zinc-100"
+                            style={{ background: `hsl(${hue} 45% 22%)` }}
+                          >
+                            {initials}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                              <p className="truncate text-[12px] font-semibold text-zinc-100">{lead.name || "Anonymous"}</p>
+                              <span className="ml-auto shrink-0 font-mono text-[9px] text-zinc-600">
+                                {new Date(lead.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}
+                              </span>
+                            </div>
+                            {lead.email && (
+                              <a
+                                href={`mailto:${lead.email}`}
+                                className="mt-0.5 block truncate text-[11px] text-violet-300/90 underline-offset-2 hover:underline"
+                                title={`Email ${lead.email}`}
+                              >
+                                {lead.email}
+                              </a>
+                            )}
+                            {lead.message && (
+                              <p className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-zinc-400" title={lead.message}>
+                                {lead.message}
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </PanelCard>
             </div>
 
             {/* Recent events */}

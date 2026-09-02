@@ -14,7 +14,7 @@ import { ProjectsView } from "@/components/forge/projects/ProjectsView"
 import { useSaveProject } from "@/components/forge/studio/useSaveProject"
 import { CommandPalette, ShortcutsDialog } from "@/components/forge/studio/CommandPalette"
 import { ReadinessDialog } from "@/components/forge/studio/ReadinessPanel"
-import { AiGenerateDialog, AiImproveDialog, ExportYamlDialog, ImportYamlDialog } from "@/components/forge/studio/Dialogs"
+import { AiGenerateDialog, AiImproveDialog, ExportYamlDialog, ImportYamlDialog, ExportHtmlDialog } from "@/components/forge/studio/Dialogs"
 import { DeployDialog } from "@/components/forge/studio/DeployDialog"
 import { toast } from "sonner"
 import type { ProjectSummary, ProjectWithConfig } from "@/lib/landing/types"
@@ -34,7 +34,9 @@ export default function Home() {
   const loadProject = useForge((s) => s.loadProject)
   const dirty = useForge((s) => s.dirty)
   const config = useForge((s) => s.config)
+  const projectId = useForge((s) => s.project.id)
   const { save } = useSaveProject()
+  const saving = useForge((s) => s.saving)
   const report = React.useMemo(() => auditConfig(config), [config])
 
   // ── Bootstrap: load last project or create the demo project ──────────────
@@ -94,6 +96,18 @@ export default function Home() {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [save])
+
+  // ── Autosave: 3s after the last edit (debounced), save silently ──────────
+  // `save` is re-created on each store change, which re-arms the timer —
+  // i.e. this is a true debounce over editing activity. Manual ⌘S keeps its
+  // confirmation toast; autosave is quiet and only updates the indicator.
+  React.useEffect(() => {
+    if (!dirty || !projectId || saving) return
+    const timer = setTimeout(() => {
+      void save({ silent: true })
+    }, 3000)
+    return () => clearTimeout(timer)
+  }, [dirty, saving, save, projectId])
 
   // ── Warn on unsaved exit ─────────────────────────────────────────────────
   React.useEffect(() => {
@@ -190,6 +204,7 @@ export default function Home() {
       <AiImproveDialog />
       <ExportYamlDialog />
       <ImportYamlDialog />
+      <ExportHtmlDialog />
       <DeployDialog />
       <ReadinessDialog />
       <ShortcutsDialog />

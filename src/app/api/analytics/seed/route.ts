@@ -5,7 +5,8 @@
 // body: { projectId, days?: number = 30 }
 // → 200 { ok: true, pageviews: number, events: number } | 400 | 404
 //
-// Wipes existing PageViews + Events for the project, then seeds:
+// Wipes existing PageViews + Events (and seeds fresh Leads) for the project,
+// then seeds:
 //  - per-day pageviews (40 + rand(0..90), mild upward trend, weekend dip)
 //  - visitor pool ≈ views/2.2 (so unique < pageviews), weighted referrers /
 //    countries / devices / browsers, low-skewed durations, 42% bounces
@@ -15,6 +16,7 @@
 //  - else cta_clicks at 4–7% of views (variant null)
 //  - section_view events (~1.5 per view, labels from config sections)
 //  - form_submit ~0.8% of views
+//  - demo leads in the leads inbox (~form_submit count, capped 14, real-sounding)
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
@@ -87,6 +89,42 @@ interface EventRow {
   path: string
   createdAt: Date
 }
+interface LeadRow {
+  projectId: string
+  name: string
+  email: string
+  message: string
+  fields: string
+  createdAt: Date
+}
+
+const DEMO_NAMES = [
+  "Maya Chen", "Omar Haddad", "Sara Novak", "Liam O\u0027Brien", "Aisha Rahman",
+  "Tom\u00e1s Silva", "Nina Petrova", "Jonas Weber", "Priya Nair", "Diego Ram\u00edrez",
+  "Elif Y\u00fclmaz", "Marcus Johnson", "Yuki Tanaka", "Clara Fontaine",
+]
+const DEMO_MESSAGES = [
+  "Loved the demo \u2014 can you send enterprise pricing? We\u2019re a team of 40.",
+  "Does this integrate with our existing stack? Happy to book a call.",
+  "Saw you on Product Hunt \u2014 congrats on the launch! One question about the API\u2026",
+  "We\u2019re evaluating 3 tools this quarter. What makes you different?",
+  "Need an invoice before we can proceed \u2014 who do I contact for billing?",
+  "The free tier is perfect for my side project. Upgrading if it sticks!",
+  "Can you support SSO? Our security team requires it.",
+  "Just wanted to say the onboarding was the smoothest I\u2019ve seen. Zero friction.",
+  "Do you offer discounts for startups or students?",
+  "How fast is support response time? We\u2019re moving off a tool with 48h SLAs.",
+  "Impressive stats on the homepage \u2014 is that from real usage data?",
+  "Looking to migrate ~200 projects over. Any bulk import tooling?",
+  "Your pricing page mentions annual billing \u2014 is there a refund window?",
+  "Feature request: dark mode for the dashboard. Otherwise, flawless.",
+]
+
+function slugifyName(name: string): string {
+  return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, "").trim().replace(/ /g, ".")
+}
+
+const DEMO_FIELD_LABELS = ["Name", "Email", "Message"]
 
 export async function POST(req: NextRequest) {
   return guard(async () => {
@@ -100,6 +138,7 @@ export async function POST(req: NextRequest) {
     // fresh re-seed
     await db.pageView.deleteMany({ where: { projectId } })
     await db.event.deleteMany({ where: { projectId } })
+    await db.lead.deleteMany({ where: { projectId } })
 
     const config = parseStoredConfig(project.config)
     const hero = config.sections.find((s): s is HeroSection => s.type === "hero")
@@ -215,6 +254,31 @@ export async function POST(req: NextRequest) {
       await db.event.createMany({ data: eventRows.slice(i, i + CHUNK) })
     }
 
-    return NextResponse.json({ ok: true, pageviews: viewRows.length, events: eventRows.length })
+    // ── demo leads (match the form_submit volume story, capped at 14) ──────
+    const formSubmits = eventRows.filter((e) => e.type === "form_submit").length
+    const leadCount = Math.min(DEMO_NAMES.length, Math.max(3, Math.round(formSubmits)))
+    const leadRows: LeadRow[] = Array.from({ length: leadCount }, (_, i) => {
+      const name = DEMO_NAMES[(i * 3 + 1) % DEMO_NAMES.length]
+      const message = DEMO_MESSAGES[(i * 5 + 2) % DEMO_MESSAGES.length]
+      const daysAgo = randInt(0, Math.min(days - 1, 20))
+      const t = new Date(now.getTime() - daysAgo * 24 * 3600 * 1000 - randInt(0, 20) * 3600 * 1000)
+      return {
+        projectId,
+        name,
+        email: `${slugifyName(name)}@example.com`,
+        message,
+        fields: JSON.stringify({
+          [DEMO_FIELD_LABELS[0]]: name,
+          [DEMO_FIELD_LABELS[1]]: `${slugifyName(name)}@example.com`,
+          [DEMO_FIELD_LABELS[2]]: message,
+        }),
+        createdAt: t,
+      }
+    })
+    if (leadRows.length) {
+      await db.lead.createMany({ data: leadRows })
+    }
+
+    return NextResponse.json({ ok: true, pageviews: viewRows.length, events: eventRows.length, leads: leadRows.length })
   })
 }

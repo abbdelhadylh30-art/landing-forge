@@ -148,7 +148,7 @@ export function SectionsPanel({ className }: { className?: string }) {
             {sections.length} {sections.length === 1 ? "section" : "sections"}
           </span>
         </div>
-        <span className="text-[10px] text-zinc-600">drag to reorder</span>
+        <span className="text-[10px] text-zinc-500">drag to reorder</span>
       </div>
       <div className="lf-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis, restrictToParentElement]} onDragEnd={onDragEnd}>

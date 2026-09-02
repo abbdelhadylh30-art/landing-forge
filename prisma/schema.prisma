@@ -18,6 +18,7 @@ model Project {
   views    PageView[]
   events   Event[]
   deploys  Deploy[]
+  leads    Lead[]
 }
 
 model PageView {
@@ -60,4 +61,17 @@ model Deploy {
   logs      String   @default("[]") // JSON array of {t, msg, level}
   durationMs Int     @default(0)
   createdAt DateTime @default(now())
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String   @default("") // best-effort name field from the form
+  email     String   @default("") // best-effort email field from the form
+  message   String   @default("") // best-effort message field from the form
+  fields    String   @default("{}") // JSON map of all submitted field label → value
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }

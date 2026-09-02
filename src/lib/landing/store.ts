@@ -16,6 +16,7 @@ interface ForgeState {
   config: LandingConfig
   dirty: boolean
   saving: boolean
+  lastSavedAt: number | null // epoch ms of the last successful save
 
   // studio ui state
   selectedSectionId: string | null
@@ -80,6 +81,7 @@ export const useForge = create<ForgeState>((set, get) => ({
   },
   dirty: false,
   saving: false,
+  lastSavedAt: null,
 
   selectedSectionId: null,
   device: "desktop",
@@ -103,7 +105,7 @@ export const useForge = create<ForgeState>((set, get) => ({
 
   setProjectMeta: (name, slug) =>
     set((s) => ({ project: { ...s.project, name, slug }, dirty: true })),
-  markSaved: () => set({ dirty: false }),
+  markSaved: () => set({ dirty: false, lastSavedAt: Date.now() }),
   setSaving: (v) => set({ saving: v }),
 
   setConfig: (next, opts) =>

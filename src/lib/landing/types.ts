@@ -295,6 +295,15 @@ export interface DeployRecord {
 }
 
 // ── Analytics ────────────────────────────────────────────────────────────────
+export interface LeadRecord {
+  id: string
+  name: string
+  email: string
+  message: string
+  fields: Record<string, string> // full submitted field label → value map
+  createdAt: string
+}
+
 export interface AnalyticsStats {
   pageviews: number
   uniqueVisitors: number

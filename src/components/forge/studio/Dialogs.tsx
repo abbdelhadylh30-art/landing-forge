@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, Copy, Download, FileCode2, Sparkles, Upload, Wand2 } from "lucide-react"
+import { Check, Code2, Copy, Download, ExternalLink, FileCode2, Sparkles, Upload, Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -18,6 +18,7 @@ import { toast } from "sonner"
 import { useForge } from "@/lib/landing/store"
 import { useUi, type DialogId } from "@/lib/landing/uiStore"
 import { configToYaml, yamlToConfig } from "@/lib/landing/yaml"
+import { buildStandaloneHtml, downloadStandaloneHtml } from "@/lib/landing/exportHtml"
 
 const EXAMPLE_PROMPTS = [
   "Landing page for a Flutter app that helps Iraqi students study. Modern dark theme, features, pricing. Arabic copy.",
@@ -138,6 +139,106 @@ export function ImportYamlDialog() {
         <DialogFooter>
           <Button size="sm" className="gap-1.5 bg-violet-500 text-white hover:bg-violet-600" onClick={apply} disabled={!text.trim()}>
             <Wand2 className="h-3.5 w-3.5" /> Import into studio
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function ExportHtmlDialog() {
+  const { open, onOpenChange } = useUiDialog("export-html")
+  const config = useForge((s) => s.config)
+  const slug = useForge((s) => s.project.slug)
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState("")
+  const [result, setResult] = React.useState<{ html: string; bytes: number; url: string } | null>(null)
+
+  const visibleSections = config.sections.filter((s) => !s.hidden).length
+
+  const build = async () => {
+    setBusy(true)
+    setError("")
+    try {
+      const { html, bytes } = await buildStandaloneHtml(config)
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }))
+      setResult({ html, bytes, url })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Pre-build on open so the dialog instantly shows size + preview link
+  React.useEffect(() => {
+    if (open && !result) void build()
+    if (!open && result) {
+      URL.revokeObjectURL(result.url)
+      setResult(null)
+    }
+  }, [open])
+
+  const fmtBytes = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md border-zinc-800 bg-zinc-950">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-zinc-100">
+            <Code2 className="h-4 w-4 text-violet-300" /> Export standalone HTML
+          </DialogTitle>
+          <DialogDescription className="text-zinc-400">
+            One self-contained <code className="rounded bg-zinc-800 px-1 font-mono text-[11px]">{slug || "landing"}.html</code> — inlined CSS, SEO meta, no build step, no dependencies. Host it anywhere.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ul className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-[12px] text-zinc-300">
+          <li className="flex items-center gap-2">
+            <Check className="h-3.5 w-3.5 text-emerald-400" /> {visibleSections} visible sections · theme {config.themeId}
+          </li>
+          <li className="flex items-center gap-2">
+            <Check className="h-3.5 w-3.5 text-emerald-400" /> SEO title + description + Open Graph tags
+          </li>
+          <li className="flex items-center gap-2">
+            <Check className="h-3.5 w-3.5 text-emerald-400" /> FAQ accordion stays interactive (tiny vanilla script)
+          </li>
+          <li className="flex items-center gap-2">
+            <Check className="h-3.5 w-3.5 text-emerald-400" /> {result ? fmtBytes(result.bytes) : "…"} single file
+          </li>
+        </ul>
+
+        {error && <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-300">{error}</p>}
+
+        <DialogFooter className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 border-zinc-700 bg-transparent text-zinc-200 hover:border-violet-500/50"
+            disabled={!result}
+            onClick={() => result && window.open(result.url, "_blank")}
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Open preview
+          </Button>
+          <Button
+            size="sm"
+            className="gap-1.5 bg-violet-500 text-white hover:bg-violet-600"
+            disabled={busy || !result}
+            onClick={() => {
+              if (!result) return
+              downloadStandaloneHtml(result.html, slug)
+              toast.success("Standalone HTML downloaded 📦", { description: `${slug || "landing"}.html · ${fmtBytes(result.bytes)} — upload it to any host` })
+            }}
+          >
+            {busy ? (
+              <>
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Rendering…
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" /> Download .html
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

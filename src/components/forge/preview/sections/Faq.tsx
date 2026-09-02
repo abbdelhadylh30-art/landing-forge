@@ -55,7 +55,14 @@ export function Faq({ section }: FaqProps) {
                 >
                   {item.q}
                 </AccordionTrigger>
-                <AccordionContent className="px-4 pb-4 text-sm leading-relaxed" style={{ color: "var(--lf-muted)" }}>
+                {/* forceMount keeps answers in the DOM (static HTML export + SEO);
+                    closed items hide via the ancestor [data-state=closed] selector —
+                    the vanilla export script toggles data-state to open them. */}
+                <AccordionContent
+                  forceMount
+                  className="px-4 pb-4 text-sm leading-relaxed [[data-state=closed]_&]:hidden"
+                  style={{ color: "var(--lf-muted)" }}
+                >
                   {item.a}
                 </AccordionContent>
               </AccordionItem>

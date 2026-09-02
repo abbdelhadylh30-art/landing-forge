@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Command as CommandIcon, Download, Palette, Redo2, Rocket, Save, Sparkles, Undo2, Upload, Wand2 } from "lucide-react"
+import { Command as CommandIcon, Code2, Download, Palette, Redo2, Rocket, Save, Sparkles, Undo2, Upload, Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -18,6 +18,18 @@ import { THEMES } from "@/lib/landing/themes"
 import { ReadinessChip } from "./ReadinessPanel"
 import { useSaveProject } from "./useSaveProject"
 
+/** Relative "saved X ago" label that self-refreshes (used inside the Save button). */
+function SavedAgo({ at }: { at: number }) {
+  const [, force] = React.useReducer((x: number) => x + 1, 0)
+  React.useEffect(() => {
+    const t = setInterval(force, 30_000) // refresh at most every 30s
+    return () => clearInterval(t)
+  }, [])
+  const s = Math.max(0, Math.floor((Date.now() - at) / 1000))
+  const label = s < 45 ? "just now" : s < 5400 ? `${Math.max(1, Math.round(s / 60))}m ago` : `${Math.round(s / 3600)}h ago`
+  return <span className="hidden tabular-nums text-zinc-500 md:inline">· {label}</span>
+}
+
 export function Toolbar() {
   const projectName = useForge((s) => s.project.name)
   const setProjectMeta = useForge((s) => s.setProjectMeta)
@@ -31,16 +43,16 @@ export function Toolbar() {
   const openDialog = useUi((s) => s.openDialog)
   const setCommandOpen = useUi((s) => s.setCommandOpen)
   const setView = useUi((s) => s.setView)
-  const { save, saving, hasProject } = useSaveProject()
+  const { save, saving, hasProject, lastSavedAt } = useSaveProject()
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/80 bg-zinc-950 px-3 py-2">
       {/* Undo / redo */}
       <div className="flex items-center gap-0.5 rounded-lg border border-zinc-800 bg-zinc-950 p-0.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-400 hover:text-zinc-100 disabled:opacity-30" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo (⌘Z)">
+        <Button variant="ghost" size="icon" className="lf-focus h-7 w-7 text-zinc-400 hover:text-zinc-100 disabled:opacity-30" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo (⌘Z)">
           <Undo2 className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-400 hover:text-zinc-100 disabled:opacity-30" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo (⇧⌘Z)">
+        <Button variant="ghost" size="icon" className="lf-focus h-7 w-7 text-zinc-400 hover:text-zinc-100 disabled:opacity-30" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo (⇧⌘Z)">
           <Redo2 className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -59,7 +71,7 @@ export function Toolbar() {
       {/* Theme quick switcher */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-300 hover:border-violet-500/50">
+          <Button variant="outline" size="sm" className="lf-focus h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-300 hover:border-violet-500/50" title="One-click themes — 6 curated palettes">
             <Palette className="h-3 w-3 text-violet-300" />
             <span className="hidden sm:inline">{THEMES.find((t) => t.id === themeId)?.name ?? "Theme"}</span>
           </Button>
@@ -90,7 +102,7 @@ export function Toolbar() {
           size="sm"
           onClick={() => setCommandOpen(true)}
           title="Command palette (⌘K)"
-          className="h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-400 hover:border-violet-500/50 hover:text-zinc-200"
+          className="lf-focus h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-400 hover:border-violet-500/50 hover:text-zinc-200"
         >
           <CommandIcon className="h-3 w-3" />
           <span className="hidden font-mono text-[10px] lg:inline">K</span>
@@ -117,17 +129,20 @@ export function Toolbar() {
         {/* Import / export */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-300 hover:border-violet-500/50">
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] text-zinc-300 hover:border-violet-500/50" title="Import / export — YAML and standalone HTML">
               <Download className="h-3 w-3" />
-              <span className="hidden sm:inline">YAML</span>
+              <span className="hidden sm:inline">Export</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44 border-zinc-800 bg-zinc-900">
+          <DropdownMenuContent align="end" className="w-52 border-zinc-800 bg-zinc-900">
             <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => openDialog("export-yaml")}>
               <Download className="h-3.5 w-3.5 text-zinc-300" /> Export YAML…
             </DropdownMenuItem>
             <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => openDialog("import-yaml")}>
               <Upload className="h-3.5 w-3.5 text-zinc-300" /> Import YAML…
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => openDialog("export-html")}>
+              <Code2 className="h-3.5 w-3.5 text-zinc-300" /> Export standalone HTML…
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-zinc-800" />
             <DropdownMenuItem className="gap-2 text-[12px] focus:bg-violet-500/20" onClick={() => setView("projects")}>
@@ -136,17 +151,18 @@ export function Toolbar() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Save */}
+        {/* Save (⌘S) — autosaved 3s after the last edit */}
         <Button
           variant="outline"
           size="sm"
           className={cn("h-7 gap-1.5 border-zinc-800 bg-zinc-950 text-[11px] hover:border-violet-500/50", dirty ? "border-amber-500/40 text-amber-200" : "text-zinc-300")}
-          onClick={save}
+          onClick={() => void save()}
           disabled={saving || !hasProject}
-          title="Save (⌘S)"
+          title={dirty ? "Save now (⌘S) — autosave runs 3s after your last edit" : lastSavedAt ? `Saved ${new Date(lastSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — autosave on` : "Save (⌘S)"}
         >
-          <Save className={cn("h-3 w-3", dirty && "text-amber-300")} />
+          <Save className={cn("h-3 w-3", dirty && "text-amber-300", !dirty && !saving && "text-emerald-400/80")} />
           {saving ? "Saving…" : dirty ? "Save*" : "Saved"}
+          {!saving && !dirty && lastSavedAt && <SavedAgo at={lastSavedAt} />}
         </Button>
 
         {/* Deploy */}
