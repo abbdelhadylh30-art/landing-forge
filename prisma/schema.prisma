@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  config    String // JSON-serialized LandingConfig
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  views    PageView[]
+  events   Event[]
+  deploys  Deploy[]
+}
+
+model PageView {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  visitorId  String   @default("anon") // pseudo-anonymous visitor id (client-generated)
+  path       String   @default("/")
+  referrer   String   @default("direct")
+  country    String   @default("US")
+  device     String   @default("desktop")
+  browser    String   @default("Chrome")
+  duration   Int      @default(0) // seconds in page
+  isBounce   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Event {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type      String // cta_click | form_submit | section_view | variant_exposure | promote_winner
+  label     String   @default("")
+  variant   String? // A/B variant name, e.g. "A"
+  value     Float    @default(0) // numeric value (e.g. price for revenue)
+  path      String   @default("/")
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Deploy {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status    String   @default("queued") // queued | building | live | failed
+  url       String?
+  logs      String   @default("[]") // JSON array of {t, msg, level}
+  durationMs Int     @default(0)
+  createdAt DateTime @default(now())
+}
