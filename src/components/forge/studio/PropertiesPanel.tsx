@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronsUpDown, Eye, EyeOff, GripVertical, Plus, Sparkles, Trash2, Copy, ArrowUp, ArrowDown } from "lucide-react"
+import { ChevronsUpDown, Eye, EyeOff, GripVertical, Images, Plus, Sparkles, Trash2, Copy, ArrowUp, ArrowDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -32,6 +32,7 @@ import type {
   ContactSection,
   CtaFinalSection,
 } from "@/lib/landing/types"
+import { ImageLibraryDialog } from "./ImageLibraryDialog"
 
 // ─── Field primitives ────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ function AiImageField({
   const [prompt, setPrompt] = React.useState(suggestion)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState("")
+  const [libraryOpen, setLibraryOpen] = React.useState(false)
   // keep the prompt in sync when the parent suggestion changes (item switch)
   React.useEffect(() => {
     setPrompt(suggestion)
@@ -87,6 +89,16 @@ function AiImageField({
           placeholder="https://… (or generate with AI)"
           className="h-8 border-zinc-700/80 bg-zinc-900/60 font-mono text-xs text-zinc-100 focus-visible:ring-violet-500/60"
         />
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 shrink-0 border-zinc-700 text-zinc-400 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-200"
+          onClick={() => setLibraryOpen(true)}
+          title="Pick from the image library — reuse any generated image"
+          aria-label="Open image library"
+        >
+          <Images className="h-3.5 w-3.5" />
+        </Button>
         <Button
           variant="outline"
           size="icon"
@@ -131,6 +143,11 @@ function AiImageField({
           </Button>
         </div>
       ) : null}
+      <ImageLibraryDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        picker={{ onPick: onChange, hint: "Click an image to use it for this field — every generated image is kept here." }}
+      />
     </Field>
   )
 }

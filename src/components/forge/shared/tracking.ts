@@ -33,8 +33,8 @@ export interface TrackPayload {
   value?: number
 }
 
-export async function track(projectId: string, payload: TrackPayload): Promise<boolean> {
-  if (!projectId) return false
+export async function track(projectId: string, payload: TrackPayload): Promise<string | null> {
+  if (!projectId) return null
   try {
     const res = await fetch("/api/analytics/track", {
       method: "POST",
@@ -45,6 +45,30 @@ export async function track(projectId: string, payload: TrackPayload): Promise<b
         referrer: typeof document !== "undefined" ? document.referrer || "direct" : "direct",
         ...payload,
       }),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { id?: string }
+    return data.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Engagement ping — updates an existing pageview record with real time-on-page
+ * and engagement (used by the published page). `keepalive` lets the final ping
+ * survive tab close / navigation.
+ */
+export async function pingEngagement(
+  pageviewId: string,
+  opts: { duration?: number; engaged?: boolean } = {}
+): Promise<boolean> {
+  try {
+    const res = await fetch("/api/analytics/track", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: pageviewId, ...opts }),
+      keepalive: true,
     })
     return res.ok
   } catch {

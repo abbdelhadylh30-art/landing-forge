@@ -412,3 +412,70 @@ Next-phase priority order:
 3. **Live analytics refresh** — poll or WebSocket push so the dashboard updates while a visitor is on the published page (mini-service + `?XTransformPort=` gateway per platform rules).
 4. **Mobile pane switcher polish** for the studio (the 3-panel layout is desktop-first).
 5. Smaller: section-level anchor override field in properties panel (currently derived from type); "Copy published link" in Projects view cards.
+
+---
+Task ID: R9
+Agent: main (Z.ai Code) — round 9
+Task: Assess status, QA via agent-browser, fix findings, ship R8-handover priorities (engagement tracking, image library, live dashboard, mobile polish)
+
+Work Log:
+- Status assessment (agent-browser): STABLE — 0 page/console errors, published page + studio + mobile all clean. Found ONE real bug while reading StudioShell during planning: **lg–xl dead zone** — the pane switcher was `lg:hidden` while PropertiesPanel is `xl:flex`, so at 1024–1280px widths the properties panel was unreachable (no switcher, no panel).
+- BUG FIX — pane switcher covers lg–xl: switcher changed `lg:hidden` → `xl:hidden` (now visible on phones AND 1024–1280px where it was previously impossible to reach Edit). Switcher restyled as a centered segmented control (max-w-md, inset highlight, active violet text + section-count pill). NEW auto-jump UX: selecting a section in the Sections pane auto-switches to the Edit pane (only while "sections" is active — preview-canvas clicks keep the pane). VERIFIED at 1100px (VLM: switcher visible, Edit panel shows Hero properties) and on mobile (row tap → Edit pane, Headline visible); mobile 390px no horizontal overflow.
+- NEW FEATURE 1 — Engagement / duration tracking (R8-handover priority #1):
+  - PATCH /api/analytics/track: body { id, duration?, engaged? } — duration only grows (max with stored); isBounce cleared when engaged=true OR duration ≥ 15s.
+  - tracking.ts: track() now returns the created record id (Promise<string|null> — all existing fire-and-forget callers compatible); new pingEngagement(id, {duration, engaged}) with keepalive.
+  - PublishedPage: captures the pageview id, pings every 15s while visible, final ping on pagehide/visibilitychange (named listeners, properly cleaned up), immediate engaged ping on CTA click / form submit; telemetry pill shows live time-on-page + emerald ✓ "synced" indicator once a ping lands.
+  - VERIFIED: PATCH 200s in dev.log, pill "15s✓", DB row for the live visit = duration 75 / isBounce false (older visits remain 0/true), dashboard avgDuration/bounce now reflect real behavior.
+- NEW FEATURE 2 — Image library (priority #2):
+  - GET/DELETE /api/images: lists public/uploads with name/bytes/createdAt/usedBy (scans project configs); DELETE blocked with 409 + usedBy list while referenced; URL regex whitelist blocks path traversal (…%2Fpackage.json → 400).
+  - ImageLibraryDialog: grid cards (thumbnail, name, size, age, in-use badge) — picker mode (click card → applies URL to the field, hover zoom + pick affordance) and manager mode (Copy URL + Delete buttons, delete disabled with explanatory tooltip when in use). Refresh button, loading + empty states.
+  - Wired into every AiImageField (hero + gallery items — new Images button next to ✨ generate) + ⌘K palette "Image library — reuse / delete generated images" (manager mode, dialog id "image-library" in uiStore, rendered in page.tsx).
+  - DEBUG NOTE: initial /api/images 405'd because the Write of route.ts silently failed when the parent dir didn't exist — the file was EMPTY. Rewrote it; also keep route exports strictly handlers+config (interface kept non-exported). All endpoints verified: list (3 images w/ correct usedBy), 409 in-use guard, 200 delete, 400 traversal.
+  - VERIFIED UI: picker from Hero (URL applied to input), manager from palette (delete buttons + in-use badge), thumbnails all load (VLM "broken image" was a lazy-load timing false positive — img.complete check passed).
+- NEW FEATURE 3 — Live analytics refresh (priority #3, polling approach):
+  - DashboardView: Live/Paused toggle (emerald pulse dot / Pause icon) — polls every 5s while enabled and tab visible; payloads JSON-diffed so unchanged data never re-renders charts; leads diffed too; "new data" violet dot appears for 6s when something changed; load() gained {quiet} mode (no spinner, no toasts).
+  - VERIFIED cross-tab end-to-end: analytics in tab 1, published page in tab 2, CTA click → dashboard auto-showed "cta click hero: Start Your Journey vB" + newDot=1 within ~7s without any manual refresh.
+- NEW — Projects view published actions: each card gets Copy-published-link (Link2, emerald hover, copies origin/?p=slug, toast) and Open-published-page (ExternalLink, new tab). VERIFIED: toast "Published link copied 🔗 /ros-agency…".
+- Styling polish: segmented pane control (see bug fix), analytics Live toggle chip, library cards, projects card footer buttons, telemetry pill sync indicator.
+- QA regression: fresh studio session 0 page errors / 0 console warnings; published page chrome + tracking intact; lint 0/0; tsc clean (app code); dev.log healthy; temporary screenshots cleaned up. export.css NOT regenerated (no new classes in preview components this round — only studio/dashboard UI changed).
+- Ops: dev server restarted once mid-round (pkill next dev; self-healing respawn loop brought it back; restart also picked up the new /api/images route after the empty-file fix).
+
+Stage Summary:
+- The analytics loop is now REAL on both sides: visitors' time-on-page & engagement are recorded (not just arrival), and the dashboard updates live while they browse.
+- Image library closes the asset loop: generate → library → reuse across any field, with safe deletion.
+- A genuine responsive bug (properties unreachable at 1024–1280px) found and fixed, plus mobile auto-jump-to-Edit UX.
+- Projects view can share/open the published page directly per project.
+- All features verified end-to-end; lint/tsc clean; no open bugs.
+
+---
+Task ID: R9-HANDOVER
+Agent: main (Z.ai Code)
+Task: Round 9 handover — status / goals / risks & next priorities
+
+## 1. Current project status assessment
+- **Stable and fully "live-looped".** Dev server healthy (port 3000, self-healing respawn loop), `bun run lint` 0/0, `tsc --noEmit` clean for app code, 0 page/console errors on fresh sessions, dev.log clean.
+- This round fixed 1 real responsive bug (properties unreachable at 1024–1280px) and shipped the R8 handover's top-3 priorities: real engagement/duration tracking, the image library, and live dashboard refresh.
+- Everything verified end-to-end via agent-browser + direct DB inspection (pageview row: duration 75s, isBounce false) + cross-tab live-refresh test.
+
+## 2. Current goals / completed modifications / verification results
+Goals: QA triage (stable) → fix the lg–xl dead zone → ship engagement tracking, image library, live refresh, mobile/project polish.
+- Engagement tracking: PATCH /api/analytics/track (duration grows, ≥15s or interaction de-bounces), 15s pings + keepalive final ping from the published page, synced-indicator in the visitor pill. VERIFIED via PATCH 200 logs, DB row, dashboard.
+- Image library: /api/images GET/DELETE with in-use guard (409 + usedBy) and traversal-safe URL whitelist; ImageLibraryDialog with picker mode (hero/gallery fields) + manager mode (⌘K); safe delete. All endpoints + UI flows VERIFIED. (Note: route initially 405'd — empty file from a failed Write; if a new API route 405s, check the file actually has content.)
+- Live analytics: 5s polling with JSON-diffed payloads (no chart flicker), Live/Paused toggle, new-data dot, document.hidden-aware. VERIFIED cross-tab (CTA on published page → dashboard auto-update).
+- Studio responsive: pane switcher now xl:hidden (covers the previously dead 1024–1280px range), segmented control styling, section-count pill, auto-jump Sections→Edit on row select. VERIFIED at 1100px (VLM) + 390px.
+- Projects: per-card Copy/Open published link. VERIFIED (clipboard + toast).
+
+## 3. Unresolved issues / risks + next-phase priorities
+Known limitations:
+- Engagement pings stop if the visitor's browser throttles timers in background tabs (only-while-visible polling); the final pagehide ping usually covers it.
+- Live dashboard refresh is 5s polling (not push) — fine at demo scale; a WebSocket mini-service would be the next step if scale matters.
+- Image "usedBy" scan is a substring match over config JSON — exact but coarse (a URL in a text field would count as usage; acceptable, errs safe).
+- Published page still shows the last SAVED config (by design); the mobile VLM 7/10 score this round was a misread of the preview canvas (objectively: 51+51+32px chrome, 361px+ scrollable content, no overflow).
+- export.css unchanged (no preview-component classes added this round).
+
+Next-phase priority order:
+1. **Visitor-map / live overlay** — "who's on the page right now" strip (active visits w/ device + duration) fed by the existing live polling; makes the dashboard feel alive.
+2. **Section-level A/B reporting polish** — per-variant duration/engagement (now that durations are real), not just CTR.
+3. **Anchor override field** in the properties panel (anchors are currently type-derived only).
+4. **Reusable brand kit** — logo upload + global brand color accent override per project.
+5. Smaller: seed script awareness of engagement data (seeded rows currently bounce-heavy), mobile toolbar compaction if 2 rows feel tight.

@@ -7,6 +7,13 @@
 //   type: "pageview" | "cta_click" | "form_submit" | "section_view" |
 //         "variant_exposure" | "promote_winner"
 // → 200 { ok: true, id } | 400 | 404
+//
+// PATCH /api/analytics/track — engagement update for a pageview record
+// body: { id, duration?, engaged? }
+//   duration: seconds on page (kept if greater than stored)
+//   engaged: true marks the visit non-bounce (CTA click / form submit)
+//            duration ≥ 15s also implicitly de-bounces
+// → 200 { ok: true, duration } | 400 | 404
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
@@ -17,6 +24,9 @@ export const dynamic = "force-dynamic"
 
 const TRACK_TYPES = ["pageview", "cta_click", "form_submit", "section_view", "variant_exposure", "promote_winner"] as const
 type TrackType = (typeof TRACK_TYPES)[number]
+
+/** A visit that stays ≥ 15s counts as engaged (industry-standard bounce window). */
+const ENGAGED_AFTER_S = 15
 
 export async function POST(req: NextRequest) {
   return guard(async () => {
@@ -60,5 +70,25 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     })
     return NextResponse.json({ ok: true, id: row.id })
+  })
+}
+
+export async function PATCH(req: NextRequest) {
+  return guard(async () => {
+    const body = await readJsonBody(req)
+    const id = str(body.id)
+    if (!id) throw new HttpError(400, "Missing 'id'")
+    const row = await db.pageView.findUnique({ where: { id }, select: { id: true, duration: true, isBounce: true } })
+    if (!row) throw new HttpError(404, "Pageview not found")
+
+    // duration only ever grows (latest ping wins, but never shrinks)
+    const incoming = Math.max(0, Math.floor(num(body.duration) ?? 0))
+    const duration = Math.max(row.duration, incoming)
+    const engaged = body.engaged === true || duration >= ENGAGED_AFTER_S
+    await db.pageView.update({
+      where: { id },
+      data: { duration, ...(engaged ? { isBounce: false } : {}) },
+    })
+    return NextResponse.json({ ok: true, duration, isBounce: engaged ? false : row.isBounce })
   })
 }

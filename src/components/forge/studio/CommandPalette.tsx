@@ -14,6 +14,7 @@ import {
   Keyboard,
   Layers,
   Monitor,
+  Images,
   Palette,
   Plus,
   Redo2,
@@ -237,6 +238,9 @@ export function CommandPalette() {
           </CommandItem>
           <CommandItem className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100" onSelect={() => run(() => openDialog("readiness"))}>
             <Check className="h-4 w-4 text-emerald-300" /> Landing readiness score…
+          </CommandItem>
+          <CommandItem className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100" onSelect={() => run(() => openDialog("image-library"))}>
+            <Images className="h-4 w-4 text-violet-300" /> Image library — reuse / delete generated images
           </CommandItem>
           <CommandItem className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100" onSelect={() => run(() => openDialog("shortcuts"))}>
             <Keyboard className="h-4 w-4 text-zinc-400" /> Keyboard shortcuts

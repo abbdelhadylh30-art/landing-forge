@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { BarChart3, Crown, Download, Globe2, Loader2, Mail, MonitorSmartphone, MousePointerClick, Sparkles, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
+import { BarChart3, Crown, Download, Globe2, Loader2, Mail, MonitorSmartphone, MousePointerClick, Pause, Radio, Sparkles, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
@@ -101,31 +101,53 @@ export function DashboardView() {
   const [loading, setLoading] = React.useState(true)
   const [seeding, setSeeding] = React.useState(false)
   const [days, setDays] = React.useState("30")
+  // live refresh: poll while enabled + tab visible; only re-render on change
+  const [live, setLive] = React.useState(true)
+  const [lastRefresh, setLastRefresh] = React.useState<number | null>(null)
+  const [hasNew, setHasNew] = React.useState(false)
 
-  const load = React.useCallback(async () => {
-    if (!projectId) return
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/analytics?projectId=${projectId}&days=${days}`)
-      const payload = (await res.json()) as AnalyticsPayload
-      setData(payload)
-    } catch {
-      toast.error("Could not load analytics")
-    } finally {
-      setLoading(false)
-    }
-    try {
-      const res = await fetch(`/api/leads?projectId=${projectId}&take=50`)
-      const out = (await res.json()) as { leads?: LeadRecord[] }
-      setLeads(out.leads ?? [])
-    } catch {
-      /* leads inbox is best-effort */
-    }
-  }, [projectId, days])
+  const load = React.useCallback(
+    async (opts?: { quiet?: boolean }) => {
+      if (!projectId) return
+      if (!opts?.quiet) setLoading(true)
+      try {
+        const res = await fetch(`/api/analytics?projectId=${projectId}&days=${days}`)
+        const payload = (await res.json()) as AnalyticsPayload
+        setData((prev) => {
+          if (prev && JSON.stringify(prev) === JSON.stringify(payload)) return prev
+          if (prev && opts?.quiet) setHasNew(true)
+          return payload
+        })
+      } catch {
+        if (!opts?.quiet) toast.error("Could not load analytics")
+      } finally {
+        if (!opts?.quiet) setLoading(false)
+        if (opts?.quiet) setLastRefresh(Date.now())
+      }
+      try {
+        const res = await fetch(`/api/leads?projectId=${projectId}&take=50`)
+        const out = (await res.json()) as { leads?: LeadRecord[] }
+        setLeads((prev) => (prev && JSON.stringify(prev) === JSON.stringify(out.leads ?? []) ? prev : (out.leads ?? [])))
+      } catch {
+        /* leads inbox is best-effort */
+      }
+    },
+    [projectId, days]
+  )
 
   React.useEffect(() => {
     void load()
   }, [load])
+
+  // ── Live polling: refresh every 5s while enabled and the tab is visible.
+  // Payloads are diffed — unchanged data never re-renders the charts.
+  React.useEffect(() => {
+    if (!live || !projectId) return
+    const t = setInterval(() => {
+      if (!document.hidden) void load({ quiet: true })
+    }, 5000)
+    return () => clearInterval(t)
+  }, [live, projectId, load])
 
   const seed = async () => {
     if (!projectId) return
@@ -146,6 +168,13 @@ export function DashboardView() {
       setSeeding(false)
     }
   }
+
+  // clear the "new data" hint once the user has seen it (any interaction)
+  React.useEffect(() => {
+    if (!hasNew) return
+    const t = setTimeout(() => setHasNew(false), 6000)
+    return () => clearTimeout(t)
+  }, [hasNew])
 
   const promoteWinner = async () => {
     const hero = sections.find((s) => s.type === "hero" && s.ab?.enabled)
@@ -206,7 +235,36 @@ export function DashboardView() {
               Privacy-friendly · no cookies · GDPR-safe · <span className="font-mono">/{slug}/dashboard</span>
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* Live auto-refresh toggle — polls every 5s while the tab is visible */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={live}
+              onClick={() => setLive((v) => !v)}
+              title={
+                live
+                  ? `Live refresh on — new published-page visits appear automatically${lastRefresh ? ` (last check ${Math.max(0, Math.round((Date.now() - lastRefresh) / 1000))}s ago)` : ""}`
+                  : "Live refresh paused — click to resume auto-updating"
+              }
+              className={cn(
+                "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
+                live
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+                  : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              {live ? (
+                <span className="relative flex size-2" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+                </span>
+              ) : (
+                <Pause className="h-3 w-3" />
+              )}
+              {live ? "Live" : "Paused"}
+              {live && hasNew && <span className="h-1.5 w-1.5 rounded-full bg-violet-400" title="New data just arrived" aria-label="New data arrived" />}
+            </button>
             <Select value={days} onValueChange={setDays}>
               <SelectTrigger className="h-8 w-24 border-zinc-800 bg-zinc-900 text-[12px] text-zinc-200" aria-label="Date range">
                 <SelectValue />

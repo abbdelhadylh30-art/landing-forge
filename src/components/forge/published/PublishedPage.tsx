@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { LandingPreview } from "@/components/forge/preview/LandingPreview"
-import { track, detectDevice, detectBrowser, getVisitorId } from "@/components/forge/shared/tracking"
+import { track, pingEngagement, detectDevice, detectBrowser, getVisitorId } from "@/components/forge/shared/tracking"
 import type { HeroSection, LandingConfig, ProjectSummary, ProjectWithConfig, Section } from "@/lib/landing/types"
 
 type LoadState =
@@ -68,9 +68,12 @@ export function PublishedPage({ slug }: { slug: string }) {
   const [copied, setCopied] = React.useState(false)
 
   const sessionStartRef = React.useRef(Date.now())
+  const pageviewIdRef = React.useRef<string | null>(null)
+  const engagedRef = React.useRef(false)
   const [clicks, setClicks] = React.useState(0)
   const [events, setEvents] = React.useState(0)
   const [leadsSent, setLeadsSent] = React.useState(0)
+  const [savedDuration, setSavedDuration] = React.useState(0)
   const trackedOnceRef = React.useRef(false)
 
   // ── Load project by slug (last SAVED state — this is what "published" means)
@@ -110,7 +113,9 @@ export function PublishedPage({ slug }: { slug: string }) {
       browser: detectBrowser(),
       visitorId: getVisitorId(),
       duration: 0,
-      isBounce: true, // provisional bounce — any CTA click / form submit marks the visit engaged
+      isBounce: true, // provisional bounce — engagement pings de-bounce this visit
+    }).then((pageviewId) => {
+      pageviewIdRef.current = pageviewId
     })
     setEvents((n) => n + 1)
 
@@ -122,6 +127,36 @@ export function PublishedPage({ slug }: { slug: string }) {
       setEvents((n) => n + 1)
     }
   }, [state, slug])
+
+  // ── Engagement pings: real time-on-page + bounce updates ─────────────────
+  // Every 15s while the tab is visible we report elapsed seconds; the final
+  // ping rides on pagehide/visibilitychange with keepalive. Duration ≥ 15s or
+  // an interaction (CTA click / form submit) marks the visit non-bounce.
+  const elapsedS = () => Math.floor((Date.now() - sessionStartRef.current) / 1000)
+  React.useEffect(() => {
+    if (state.kind !== "ready") return
+    const ping = () => {
+      const id = pageviewIdRef.current
+      if (!id) return
+      void pingEngagement(id, { duration: elapsedS(), ...(engagedRef.current ? { engaged: true } : {}) }).then((ok) => {
+        if (ok) setSavedDuration(elapsedS())
+      })
+    }
+    const interval = setInterval(() => {
+      if (!document.hidden) ping()
+    }, 15_000)
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") ping()
+    }
+    const onPageHide = () => ping()
+    document.addEventListener("visibilitychange", onVisibility)
+    window.addEventListener("pagehide", onPageHide)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisibility)
+      window.removeEventListener("pagehide", onPageHide)
+    }
+  }, [state.kind])
 
   // ── Real page title from the project's SEO settings
   React.useEffect(() => {
@@ -138,6 +173,8 @@ export function PublishedPage({ slug }: { slug: string }) {
   const handleCtaClick = React.useCallback(
     (section: Section, label: string) => {
       if (!projectId) return
+      engagedRef.current = true
+      if (pageviewIdRef.current) void pingEngagement(pageviewIdRef.current, { duration: Math.floor((Date.now() - sessionStartRef.current) / 1000), engaged: true })
       setClicks((n) => n + 1)
       setEvents((n) => n + 1)
       void track(projectId, {
@@ -154,6 +191,8 @@ export function PublishedPage({ slug }: { slug: string }) {
   const handleFormSubmit = React.useCallback(
     (section: Section, data: Record<string, string>) => {
       if (!projectId) return
+      engagedRef.current = true
+      if (pageviewIdRef.current) void pingEngagement(pageviewIdRef.current, { duration: Math.floor((Date.now() - sessionStartRef.current) / 1000), engaged: true })
       setEvents((n) => n + 1)
       setLeadsSent((n) => n + 1)
       void track(projectId, { type: "form_submit", label: `${section.type}: ${Object.keys(data).join(", ")}`, path: `/${slug}` })
@@ -269,9 +308,10 @@ export function PublishedPage({ slug }: { slug: string }) {
 
             {/* session telemetry */}
             <span className="hidden items-center gap-3 font-mono text-[10px] text-zinc-400 md:flex" aria-label="Your visit is being tracked, privacy-friendly">
-              <span className="flex items-center gap-1" title="Time on page">
-                <Timer className="h-3 w-3" />
+              <span className="flex items-center gap-1" title={savedDuration > 0 ? `Time on page — synced to analytics (${savedDuration}s saved)` : "Time on page — synced to analytics every 15s"}>
+                <Timer className={cn("h-3 w-3", savedDuration > 0 && "text-emerald-400/80")} />
                 <SessionTimer since={sessionStartRef.current} />
+                {savedDuration > 0 && <span className="text-emerald-400/80" title="Duration synced to the analytics dashboard">✓</span>}
               </span>
               <span className="flex items-center gap-1" title="CTA clicks this visit">
                 <MousePointerClick className="h-3 w-3" />

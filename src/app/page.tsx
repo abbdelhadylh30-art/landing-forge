@@ -18,6 +18,7 @@ import { CommandPalette, ShortcutsDialog } from "@/components/forge/studio/Comma
 import { ReadinessDialog } from "@/components/forge/studio/ReadinessPanel"
 import { AiGenerateDialog, AiImproveDialog, ExportYamlDialog, ImportYamlDialog, ExportHtmlDialog } from "@/components/forge/studio/Dialogs"
 import { DeployDialog } from "@/components/forge/studio/DeployDialog"
+import { ImageLibraryDialog } from "@/components/forge/studio/ImageLibraryDialog"
 import { toast } from "sonner"
 import type { ProjectSummary, ProjectWithConfig } from "@/lib/landing/types"
 
@@ -32,6 +33,8 @@ const VIEWS: { id: View; label: string; icon: typeof Hammer }[] = [
 export default function Home() {
   const view = useUi((s) => s.view)
   const setView = useUi((s) => s.setView)
+  const dialog = useUi((s) => s.dialog)
+  const closeDialog = useUi((s) => s.closeDialog)
   const [booting, setBooting] = React.useState(true)
   // "published" page mode: /?p=<slug> renders the project's saved config as a
   // live visitor page (real pageview/CTA/form tracking) instead of the studio.
@@ -223,6 +226,7 @@ export default function Home() {
       <ImportYamlDialog />
       <ExportHtmlDialog />
       <AddSectionDialog />
+      <ImageLibraryDialog open={dialog === "image-library"} onOpenChange={(o) => !o && closeDialog()} />
       <DeployDialog />
       <ReadinessDialog />
       <ShortcutsDialog />

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Copy, FilePlus2, FolderOpen, Layers, Loader2, Sparkles, Trash2 } from "lucide-react"
+import { Copy, ExternalLink, FilePlus2, FolderOpen, Layers, Link2, Loader2, Sparkles, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
@@ -31,6 +31,20 @@ export function ProjectsView({ onOpenProject }: { onOpenProject: (id: string) =>
       toast.error("Could not load projects")
     }
   }, [])
+
+  const copyPublishedLink = async (p: ProjectSummary) => {
+    const url = `${window.location.origin}/?p=${encodeURIComponent(p.slug)}`
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success("Published link copied 🔗", { description: `/${p.slug} — visits there are tracked live in Analytics.` })
+    } catch {
+      toast.error("Copy failed")
+    }
+  }
+
+  const openPublished = (p: ProjectSummary) => {
+    window.open(`/?p=${encodeURIComponent(p.slug)}`, "_blank", "noopener")
+  }
 
   React.useEffect(() => {
     void refresh()
@@ -137,6 +151,28 @@ export function ProjectsView({ onOpenProject }: { onOpenProject: (id: string) =>
                     <div className="flex gap-1 border-t border-zinc-800/80 p-2">
                       <Button variant="outline" size="sm" className="h-7 flex-1 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-300 hover:border-violet-500/50 hover:text-violet-200" onClick={() => open(p)} disabled={busyThis}>
                         {busyThis ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />} Open
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-400 hover:border-emerald-500/50 hover:text-emerald-200"
+                        onClick={() => void copyPublishedLink(p)}
+                        disabled={busyThis}
+                        aria-label={`Copy published link for ${p.name}`}
+                        title={`Copy the published link (/${p.slug}) — real visits are tracked`}
+                      >
+                        <Link2 className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-400 hover:border-emerald-500/50 hover:text-emerald-200"
+                        onClick={() => openPublished(p)}
+                        disabled={busyThis}
+                        aria-label={`Open published page for ${p.name}`}
+                        title={`Open the published page (/${p.slug}) in a new tab`}
+                      >
+                        <ExternalLink className="h-3 w-3" />
                       </Button>
                       <Button variant="outline" size="sm" className="h-7 gap-1 border-zinc-800 bg-transparent text-[11px] text-zinc-400 hover:text-zinc-100" onClick={() => duplicate(p)} disabled={busyThis} aria-label={`Duplicate ${p.name}`} title="Duplicate">
                         <Copy className="h-3 w-3" />

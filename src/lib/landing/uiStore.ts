@@ -11,6 +11,7 @@ export type DialogId =
   | "import-yaml"
   | "export-html"
   | "add-section"
+  | "image-library"
   | "deploy"
   | "readiness"
   | "shortcuts"
