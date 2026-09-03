@@ -765,3 +765,43 @@ Next-phase priorities:
 3. Publish-state preview: the studio preview has no visual indicator that Bean Route's brand font (g-playfair) is ACTIVE on the published page vs system default — minor UX clarity idea (badge on the font picker tile: "live").
 4. Per-variant section_view breakdown: variantMap exists — section_views could be tagged with variants to show "Pricing A: 300 reads vs B: 380" (attribution plumbing exists in the track route already).
 5. Smaller: mobile toolbar compaction on very small phones (carried), logo/brand consistency readiness check (carried).
+
+---
+Task ID: R15
+Agent: main (Z.ai Code)
+Task: Round 15 — per-variant section reads (R14 #4), sticky CTA toggle (R14 #2), hero read asymmetry fix (R14 #1), font live indicator (R14 #3)
+
+Work Log:
+- QA baseline (fresh browser, gateway :81): 0 page/console errors across all views + published page; services healthy; no bugs → feature work per R14 priorities (all four actionable items this round).
+- NEW FEATURE — PER-VARIANT SECTION READS (R14 priority #4, the headline):
+  - PublishedPage: section_view events now carry the visitor's variant when their section runs an A/B test. Assignment read from a variantMapRef (ref mirror of variantMap set synchronously in the assignment effect BEFORE the observer arms — avoids the re-arm/double-count race of depending on the state; observer closure reads current ref at fire time).
+  - Analytics route: readsBy aggregation per test — section_view events with e.label === SECTION_META[test.section.type].label AND variant set. AbVariantResult.sectionReads added (single construction site; legacy `ab` payload reuses the same variants array so it flows everywhere).
+  - Dashboard A/B card: NEW per-variant "Reads N · M%" row (Eye icon, sky→cyan gradient bar, reach = reads/exposures) between CTR and engagement rows; hidden when sectionReads = 0 (hero test — the pageview is its read).
+  - Section performance panel: rows whose section runs a test get a violet "A/B" chip → jumpToAbTest (label→type map built from the live store config, matches by sectionType).
+  - Seeder: readSections now carry section ids; each view's section reads are tagged with that visit's own test pick from testPicks. VERIFIED after re-seed: Pricing A 150 / B 171 variant-tagged reads + untagged for unexposed visits; analytics payload shows Hero reads 0 (correct) / Pricing A 150 / B 171.
+  - E2E VERIFIED through :81: dashboard pricing tab shows "Reads 150 · 19% | Reads 171 · 21%"; section-perf chip jumps to the pricing A/B tab (aria-selected=true, card scrolled into view); live published-page scroll fired a pricing read tagged with the visitor's own variant (vB).
+- NEW FEATURE — STICKY CTA TOGGLE (R14 priority #2):
+  - types: HeroSection.stickyCta?: boolean (default ON — an opt-out, mirrors the `hidden?` pattern).
+  - yaml.ts hero guard: only `stickyCta === false` survives normalize; junk dropped. Round-trip VERIFIED (false preserved, 'yes' dropped, font unaffected).
+  - HeroEditor: SwitchField "Sticky mobile CTA" with behavior hint; update({ stickyCta: v ? undefined : false }) keeps configs clean.
+  - PublishedPage: stickyCtaVisible requires heroSection.stickyCta !== false. VERIFIED E2E: toggled OFF → autosaved (DB stickyCta: false) → published page (scrolled 2500px, 390px viewport) bar GONE; restored ON → bar back. Demo state restored to default.
+- FIX — READ-TRACKING SEMANTICS (found during this round's QA, affects R14's observer):
+  - Problem: the 0.5 intersectionRatio is a SELF-ratio — sections taller than the viewport can never reach it (Bean Route pricing: 1551px tall vs 844px viewport → max ratio 0.544, and at natural reading scroll positions 0.48). Pricing reads never fired live.
+  - Fix: a section counts as read when (ratio ≥ 0.5) OR (rect.top ≤ 0 && rect.bottom > 0 — the reader scrolled INTO the section). Threshold array [0, 0.5] so entries arrive for both. VERIFIED: scroll to pricing top edge → read fires, variant-tagged.
+  - Hero section_view emission removed (R14 #1 asymmetry): the pageview IS the hero read; now matches the seeder's CONTENT_SECTION_TYPES exclusion and the funnel ("Visited page" → "Engaged with sections"). VERIFIED: no Hero label in live section_view events.
+- POLISH (R14 #3): FontPicker hint shows "Live on the published page ✓" (emerald) when a ✦ pair is active + config clean, "Draft — unsaved changes not on the published page yet" (amber) when dirty.
+- Final regression: lint 0/0; tsc app-code clean; 0 console/page errors; mobile 390px no overflow; sticky bar default-ON verified live; memory guarded (browser closed, 1.7GB available).
+- Committed (c0651e8) + pushed to abbdelhadylh30-art/landing-forge main.
+
+Stage Summary:
+- The section-A/B analytics loop is complete: exposures → variant-tagged reads → per-variant CTR + reach + duration + engagement, with cross-links both ways (section perf → A/B tab).
+- Sticky mobile CTA is now a first-class configurable hero behavior with clean YAML round-trip.
+- Section read tracking now actually works for ALL section heights (the 0.5 self-ratio flaw was inherent to R14's implementation — caught only by live QA geometry checks).
+- All four R14 next-phase priorities closed. QA screenshots: download/qa-r15-section-ab.png, qa-r15-sticky-live.png, qa-r15-final-dashboard.png.
+
+Next-phase priorities:
+1. Mobile toolbar compaction (carried since R11): the studio toolbar wraps to 2 rows on very small phones — worth a compact mode.
+2. Logo/brand consistency readiness check (carried): readiness audit could flag brand.logoUrl missing while navbar/footer render text-only brand.
+3. Read-rate leader crown: the reads row could crown the higher-reach variant like the engagement row does (engLeader pattern) — trivial addition when wanted.
+4. Section performance time-window note: the panel is windowed by the date range like everything else; consider a "today" quick toggle for the whole dashboard.
+5. Consider export: HTML export of the STUDIO state (currently exports the saved config) — align with what the user sees if dirty.
