@@ -8,16 +8,26 @@ import { useSaveProject } from "@/components/forge/studio/useSaveProject"
 /**
  * ConnectionGuard — self-healing for dev-server restarts / network blips.
  *
- * Why this exists: when the Next.js dev server restarts (or the network
- * drops), the already-loaded page silently stops working — fetches fail,
- * clicks appear dead ("the whole project is not clickable"). Instead of a
- * dead page, the guard:
+ * Why this exists: when the Next.js dev server restarts (the sandbox
+ * supervisor restarts it from time to time, and a crash can take it down),
+ * an already-loaded page silently stops working — its JS chunks belong to
+ * the dead server instance, fetches hang/fail, clicks appear dead ("the
+ * whole project is not clickable"). Instead of a dead page, the guard:
  *
  *  1. heartbeats /api/health every 20s while visible (2s while unhealthy)
- *  2. shows a banner the moment the server is unreachable
- *  3. when the server comes back: reloads automatically when there is no
- *     unsaved work, or offers "Save & reload" when there is (autosave
- *     usually clears the dirty flag on its own, which also triggers reload)
+ *  2. detects a RESTARTED server (not just a down one): /api/health
+ *     reports the server process uptime; a server younger than this page
+ *     means the page predates the current server → it is stale → heal it.
+ *     (Two consecutive readings confirm it, so an HMR worker hiccup can't
+ *     trigger a spurious reload.)
+ *  3. checks immediately on user interaction (pointerdown/keydown) — the
+ *     very first click on a stale page triggers the heal instead of up to
+ *     20s of dead clicking
+ *  4. shows a banner the moment the server is unreachable
+ *  5. on recovery: reloads automatically when there is no unsaved work,
+ *     or offers "Save & reload" when there is (autosave usually clears
+ *     the dirty flag on its own, which also triggers reload)
+ *  6. dismisses the boot splash (window.__lfBootDone) once React is live
  *
  * Zero DB cost on the server; ~1 request/20s on the client.
  */
@@ -31,7 +41,27 @@ export function ConnectionGuard() {
     saveRef.current = save
   }, [save])
 
-  const stateRef = React.useRef<{ down: boolean; timer: number | undefined }>({ down: false, timer: undefined })
+  const stateRef = React.useRef<{ down: boolean; timer: number | undefined; staleCount: number; lastWake: number }>({
+    down: false,
+    timer: undefined,
+    staleCount: 0,
+    lastWake: 0,
+  })
+
+  // When this document was requested — a valid server must be at least
+  // this old. performance.timeOrigin = navigation start (the fetch of this
+  // html), so late hydration on a cold compile doesn't skew the anchor.
+  const loadedAtRef = React.useRef(0)
+
+  // ── heal = reload (clean) or offer save & reload (dirty) ──────────────────
+  const heal = React.useCallback(() => {
+    const { dirty } = useForge.getState()
+    if (!dirty) {
+      window.location.reload()
+    } else {
+      setRecovered(true) // offer save & reload; autosave may clear dirty on its own
+    }
+  }, [])
 
   // ── health check loop ────────────────────────────────────────────────────
   const check = React.useCallback(async () => {
@@ -39,19 +69,35 @@ export function ConnectionGuard() {
       const ctrl = new AbortController()
       const t = window.setTimeout(() => ctrl.abort(), 4000)
       const res = await fetch("/api/health", { cache: "no-store", signal: ctrl.signal })
-      clearTimeout(t)
-      const ok = res.ok
-      if (ok && stateRef.current.down) {
+      window.clearTimeout(t)
+      if (!res.ok) throw new Error("unhealthy")
+      const data = (await res.json()) as { ok?: boolean; uptime?: number; pid?: number }
+
+      if (stateRef.current.down) {
         // server came back after being down → heal the page
         stateRef.current.down = false
-        const { dirty } = useForge.getState()
-        if (!dirty) {
-          window.location.reload()
-        } else {
-          setRecovered(true) // offer save & reload; autosave may clear dirty on its own
-        }
+        setDown(false)
+        heal()
+        return true
       }
-      return ok
+
+      // restarted-server detection: the current server process cannot be
+      // younger than this document. Grace of 3s covers fetch latency skew.
+      const pageAgeSec = (Date.now() - loadedAtRef.current) / 1000
+      if (loadedAtRef.current > 0 && typeof data.uptime === "number" && data.uptime + 3 < pageAgeSec) {
+        stateRef.current.staleCount += 1
+        if (stateRef.current.staleCount === 1) {
+          // confirm with a second reading 1.5s later
+          window.setTimeout(() => void check(), 1500)
+        } else if (stateRef.current.staleCount >= 2) {
+          stateRef.current.staleCount = 0
+          heal()
+          return true
+        }
+      } else {
+        stateRef.current.staleCount = 0
+      }
+      return true
     } catch {
       if (!stateRef.current.down) {
         stateRef.current.down = true
@@ -60,10 +106,16 @@ export function ConnectionGuard() {
       }
       return false
     }
-  }, [])
+  }, [heal])
 
-  // heartbeat: fast retry while down, relaxed while healthy; paused in hidden tabs
+  // anchor + boot-splash dismissal + heartbeat loop
   React.useEffect(() => {
+    // anchor page age to the true document request time (navigation start)
+    // when available — late hydration on a cold compile must not skew it
+    loadedAtRef.current =
+      typeof performance !== "undefined" && performance.timeOrigin ? performance.timeOrigin : Date.now()
+    ;(window as unknown as { __lfBootDone?: () => void }).__lfBootDone?.()
+
     let stopped = false
     const loop = async () => {
       if (stopped) return
@@ -77,13 +129,28 @@ export function ConnectionGuard() {
       if (document.visibilityState === "visible") void check()
     }
     const onOnline = () => void check()
+    // user interaction → immediate check (rate-limited to 1 per 5s): the
+    // first click on a stale/dead page triggers detection + heal instantly
+    const onWake = () => {
+      if (document.visibilityState !== "visible") return
+      const now = Date.now()
+      if (now - stateRef.current.lastWake < 5000) return
+      stateRef.current.lastWake = now
+      void check()
+    }
     document.addEventListener("visibilitychange", onVisible)
     window.addEventListener("online", onOnline)
+    window.addEventListener("pageshow", onVisible)
+    window.addEventListener("pointerdown", onWake, { capture: true, passive: true })
+    window.addEventListener("keydown", onWake, { capture: true })
     return () => {
       stopped = true
       if (stateRef.current.timer) window.clearTimeout(stateRef.current.timer)
       document.removeEventListener("visibilitychange", onVisible)
       window.removeEventListener("online", onOnline)
+      window.removeEventListener("pageshow", onVisible)
+      window.removeEventListener("pointerdown", onWake, { capture: true })
+      window.removeEventListener("keydown", onWake, { capture: true })
     }
   }, [check])
 
@@ -132,7 +199,7 @@ export function ConnectionGuard() {
           ) : (
             <>
               <RefreshCw className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden />
-              <span className="font-semibold text-emerald-200">Reconnected</span>
+              <span className="font-semibold text-emerald-200">Studio restarted</span>
               <span className="text-zinc-400">
                 {dirty ? "— your edits are safe, reload to continue" : "— reloading…"}
               </span>

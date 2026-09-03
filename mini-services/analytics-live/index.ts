@@ -14,6 +14,11 @@
 //   dashboard → dash:subscribe { projectId }
 //   ← presence:snapshot { visits } · visit:new { visit } · visit:update
 //     visit:leave { id } · event:new { type, label, variant, at }
+//
+// ALSO HOSTS the dev-server watchdog (bottom of this file): this relay is
+// supervisor-started and therefore PERSISTS, while processes spawned from
+// agent bash commands are reaped — so the watchdog that keeps the Next.js
+// dev server alive + warm lives here.
 // ─────────────────────────────────────────────────────────────────────────────
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { Server, type Socket } from "socket.io"
@@ -264,3 +269,35 @@ httpServer.listen(HTTP_PORT, "127.0.0.1", () => {
 wsServer.listen(WS_PORT, () => {
   console.log(`analytics-live relay listening on :${WS_PORT} (socket.io path "/")`)
 })
+
+// ── dev-server watchdog (persistent home) ───────────────────────────────────
+// This relay is supervisor-started and therefore PERSISTS, while processes
+// spawned from agent bash commands are reaped. So the dev-server watchdog
+// is hosted HERE: a one-time, hot-reload-guarded spawn of
+// .zscripts/dev-warmup-loop.sh — a self-supervising shell loop that runs
+// .zscripts/dev-warmup.ts forever (it polls /api/health, warms the Next.js
+// compile cache whenever the dev server (re)appears so the next human page
+// load is instant instead of a 10-20s "renders but not clickable" window,
+// and restarts `bun run dev` if it stays down > 60s).
+//
+// No timers live in this module on purpose: bun --hot code swaps have
+// timer-lifecycle quirks, and children spawned by THIS process are both
+// persistent and immune to them. The globalThis guard prevents double
+// spawns across hot reloads.
+import { spawn } from "node:child_process"
+
+const wspawn = globalThis as typeof globalThis & { __lfWatchLoopSpawned?: boolean }
+if (!wspawn.__lfWatchLoopSpawned) {
+  wspawn.__lfWatchLoopSpawned = true
+  try {
+    const child = spawn(
+      "bash",
+      ["-c", "nohup sh /home/z/my-project/.zscripts/dev-warmup-loop.sh >/dev/null 2>&1 &"],
+      { detached: true, stdio: "ignore" },
+    )
+    child.unref()
+    console.log("[watch] dev-server watchdog loop spawned (via relay)")
+  } catch (e) {
+    console.log(`[watch] watchdog loop spawn FAILED: ${String(e)}`)
+  }
+}

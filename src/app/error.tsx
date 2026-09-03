@@ -19,6 +19,8 @@ export default function Error({
   React.useEffect(() => {
     // surface in devtools / Next dev overlay logs for diagnosis
     console.error("[landing-forge] render error:", error)
+    // never let the boot splash cover a crash screen
+    ;(window as unknown as { __lfBootDone?: () => void }).__lfBootDone?.()
   }, [error])
 
   const onRetry = async () => {

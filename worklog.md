@@ -805,3 +805,40 @@ Next-phase priorities:
 3. Read-rate leader crown: the reads row could crown the higher-reach variant like the engagement row does (engLeader pattern) — trivial addition when wanted.
 4. Section performance time-window note: the panel is windowed by the date range like everything else; consider a "today" quick toggle for the whole dashboard.
 5. Consider export: HTML export of the STUDIO state (currently exports the saved config) — align with what the user sees if dirty.
+---
+Task ID: R16
+Agent: main (Z.ai Code)
+Task: Round 16 — user reports "still not clicking": root-cause the recurring dead-page experience and make it structurally impossible
+
+Work Log:
+- USER REPORT: "hmm, it's still nt clicking" — page renders but is not interactive, again.
+- DIAGNOSIS (the real one this time):
+  - The app itself was fully healthy (fresh agent-browser session through :81: all views clickable, 0 console errors, autosave + live relay working).
+  - Timeline reconstruction from process start times + dev.log: the sandbox SUPERVISOR restarted the dev server at 11:57:31 (dev.log even shows the restart race: EADDRINUSE from a second `bun run dev` attempt) — minutes before the user tried to click. A dev-server restart leaves any open browser tab dead (stale chunks) AND the first reload afterwards hits a COLD COMPILE: dev.log shows `GET / 200 in 14.5s (compile: 14.1s)` — the page paints from SSR but nothing is clickable until hydration completes (10-45s on this 4GB box). The user clicked inside that window / on a stale tab → "still not clicking".
+  - R13's ConnectionGuard had a blind spot: it only heals when it catches the server DOWN. A quick restart (or one that happens while the tab is hidden) means health returns 200 and the guard never fires — the stale page stays dead forever. Health-OK ≠ page-valid.
+- FIX 1 — HYDRATION SPLASH (src/app/layout.tsx): inline <head> script paints a branded "Forging the studio…" overlay after a 120ms delay (fast loads never see it) — instead of a silently dead page during cold compiles. Turns into an honest explainer + Reload button after 10s if hydration never completes. Removed by React on mount (guard/error boundaries call window.__lfBootDone); error.tsx + global-error.tsx also dismiss it so a crash screen is never masked.
+- FIX 2 — CONNECTIONGUARD UPGRADE (restart detection + interaction wake):
+  - /api/health already reports the server process uptime; the guard now anchors the page to performance.timeOrigin (true document request time) and detects "server younger than this page" = the server restarted since this page was served = stale page. Two consecutive readings 1.5s apart confirm (HMR worker hiccups can't trigger it — verified the route pid/uptime is stable across code edits).
+  - Instant detection: pointerdown/keydown listeners (capture, rate-limited 1/5s) trigger an immediate health check — the FIRST click on a dead/stale page triggers the heal instead of up to 20s of dead clicking. pageshow (bfcache) + visibilitychange also re-check.
+  - Heal = auto-reload when clean, "Save & reload" flow when dirty (unchanged mechanics from R13).
+- FIX 3 — DEV-SERVER WATCHDOG (the environment fix):
+  - Discovered the sandbox reaps ALL processes spawned from agent bash commands when the command ends (even setsid+nohup — tested with sleep probes). Only supervisor-started processes persist. So a watchdog started from bash dies silently.
+  - Persistent home found: the analytics-live relay (supervisor-started, `bun --hot`). It now spawns .zscripts/dev-warmup-loop.sh (a self-supervising shell loop, detached, globalThis-guarded against hot-reload double spawns) which runs .zscripts/dev-warmup.ts forever: polls /api/health every 5s; whenever the server (re)appears it immediately requests / + /api/projects to warm the compile cache BEFORE any human reload lands; if the server stays down > 60s it starts `bun run dev` itself (re-checking the port first so supervisor races just EADDRINUSE harmlessly). Children of the relay persist — PROVEN: the relay-spawned dev server survived many bash commands.
+  - Also learned the hard way: bun --hot module swaps have timer-lifecycle quirks (a module-level timer watchdog wedged after a fetch rejection escaped a try/finally with no catch). The final design keeps ZERO timers in the relay module — pure child-process spawning.
+- VERIFICATION (all E2E through the :81 gateway with agent-browser):
+  - Killed the dev server while a tab was open: banner appeared INSTANTLY on the page's next click (interaction wake). Watchdog restarted the server after 60s, warmed it, and the tab AUTO-HEALED (page reloaded, marker gone, fully interactive again).
+  - Epoch stale-heal: faked a young server uptime in /api/health → dispatched one pointerdown → double-confirm → auto-reload (verified via session markers). Reverted.
+  - Post-recovery regression: view switching, autosave round-trip ("Saved · just now"), published page ?p=vertex renders, splash dismisses after hydration, live WS dashboard subscribes (relay dashboards:1), mobile 390px no overflow, 0 page/console errors, lint 0/0, tsc app+relay clean.
+  - Watchdog chain verified persistent: loop (pid 3488) → watchdog (3489) → dev server (3240) alive across many subsequent bash commands.
+- Committed + pushed to abbdelhadylh30-art/landing-forge main.
+
+Stage Summary:
+- "Not clickable" is now structurally fixed at every layer: cold compiles show a branded loading state (never a silent dead page), quick server restarts are detected via process-epoch comparison and the page heals on the user's first click, a persistent watchdog restarts + pre-warms the dev server so outages last ≤ ~90s and reloads land warm, and dead browsers get the connection banner with instant retry.
+- The user should refresh their preview ONCE to pick up the new guard code — after that, every future server restart self-heals.
+- Environment knowledge captured for future rounds: bash-command process reaping, relay-as-persistent-spawn-host, bun --hot timer pitfalls, supervisor restart races (EADDRINUSE in dev.log is benign).
+
+Next-phase priorities:
+1. The banner copy when the server restarts with a dirty store ("Studio restarted — your edits are safe…") could pre-test the save target before offering reload (edge polish).
+2. Consider surfacing watchdog status in the app (tiny "environment: self-healing" indicator in the footer/help) so users know recovery is automatic.
+3. Carry: mobile toolbar compaction (R11), brand-consistency readiness check (R11/R15).
+4. Turbopack memory (~1.4GB RSS) remains tight on 4GB — production build would halve it (out of sandbox scope).

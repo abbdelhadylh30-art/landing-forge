@@ -18,6 +18,8 @@ export default function GlobalError({
 }) {
   React.useEffect(() => {
     console.error("[landing-forge] fatal error:", error)
+    // never let the boot splash cover a crash screen
+    ;(window as unknown as { __lfBootDone?: () => void }).__lfBootDone?.()
   }, [error])
 
   return (
