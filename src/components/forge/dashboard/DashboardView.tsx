@@ -15,15 +15,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { BarChart3, Crown, Download, Globe2, Loader2, Mail, Monitor, MonitorSmartphone, MousePointerClick, Pause, Radio, Smartphone, Sparkles, Tablet, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
+import { BarChart3, Crown, Download, Globe2, Loader2, Mail, Monitor, MonitorSmartphone, MousePointerClick, Pause, Play, Radio, RefreshCw, Smartphone, Sparkles, Tablet, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
-import type { AnalyticsPayload, LeadRecord, LiveVisit } from "@/lib/landing/types"
+import { applyVariantPatch } from "@/lib/landing/ab"
+import type { AbTestResult, AbVariantResult, AnalyticsPayload, LeadRecord, LiveVisit } from "@/lib/landing/types"
 import { LeadDetailSheet, downloadLeadsCsv } from "./LeadDetailSheet"
-import { useDashboardRelay, mergeLiveVisits } from "@/components/forge/shared/livesocket"
+import { useDashboardRelay, mergeLiveVisits, type RelayEvent } from "@/components/forge/shared/livesocket"
 
 const ACCENT = "#A78BFA"
 const ACCENT2 = "#f0abfc"
@@ -223,6 +225,165 @@ const CHART_TOOLTIP = {
   labelStyle: { color: "#a1a1aa" },
 } as const
 
+// ── Live events ticker (fed by the WebSocket relay) ─────────────────────────
+
+export interface TickerItem {
+  id: string
+  type: string
+  label: string
+  variant: string | null
+  at: number // epoch ms
+}
+
+function tickerIcon(type: string) {
+  switch (type) {
+    case "cta_click":
+      return { icon: MousePointerClick, cls: "text-emerald-300 bg-emerald-500/10 border-emerald-500/30" }
+    case "form_submit":
+      return { icon: Mail, cls: "text-fuchsia-300 bg-fuchsia-500/10 border-fuchsia-500/30" }
+    case "variant_exposure":
+      return { icon: Sparkles, cls: "text-violet-300 bg-violet-500/10 border-violet-500/30" }
+    case "pageview":
+      return { icon: Users, cls: "text-sky-300 bg-sky-500/10 border-sky-500/30" }
+    default:
+      return { icon: Radio, cls: "text-zinc-300 bg-zinc-800/60 border-zinc-700" }
+  }
+}
+
+function relTime(at: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - at) / 1000))
+  if (s < 5) return "just now"
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  return `${Math.floor(m / 60)}h ago`
+}
+
+/** "Latest activity" strip — the last few events, pushed live over the relay. */
+function LiveEventsPanel({ items, push }: { items: TickerItem[]; push: boolean }) {
+  const [, force] = React.useReducer((x: number) => x + 1, 0)
+  React.useEffect(() => {
+    const t = setInterval(force, 5000) // relative timestamps drift slowly
+    return () => clearInterval(t)
+  }, [])
+  const shown = items.slice(0, 8)
+  return (
+    <div className="lf-fade-up rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4">
+      <div className="mb-2.5 flex flex-wrap items-center gap-2">
+        <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
+          <Radio className={cn("h-4 w-4", push ? "text-violet-300" : "text-zinc-500")} /> Latest activity
+        </h3>
+        {push && (
+          <span
+            className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300"
+            title="Events stream over WebSocket the instant they happen"
+          >
+            live
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-zinc-600">CTA clicks · form submits · exposures · visits</span>
+      </div>
+      {shown.length === 0 ? (
+        <p className="py-2.5 text-center text-[11px] text-zinc-500">
+          Nothing yet — open the published page (“Join live”) and click around: events appear here the instant they happen.
+        </p>
+      ) : (
+        <ul className="grid gap-1.5 sm:grid-cols-2">
+          {shown.map((ev) => {
+            const { icon: Icon, cls } = tickerIcon(ev.type)
+            return (
+              <li
+                key={ev.id}
+                className="lf-ticker-in flex items-center gap-2.5 rounded-lg border border-zinc-800/70 bg-zinc-900/50 px-2.5 py-1.5"
+                title={`${ev.type}${ev.variant ? ` · variant ${ev.variant}` : ""} · ${new Date(ev.at).toLocaleTimeString()}`}
+              >
+                <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md border", cls)} aria-hidden>
+                  <Icon className="h-3 w-3" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-300">
+                  {ev.type === "cta_click" ? "CTA click" : ev.type === "form_submit" ? "Form submit" : ev.type === "variant_exposure" ? "Variant exposure" : ev.type === "pageview" ? "Pageview" : ev.type}
+                  <span className="text-zinc-500"> · {ev.label}</span>
+                  {ev.variant && <span className="ml-1 rounded bg-violet-500/15 px-1 py-0.5 font-mono text-[9px] font-bold text-violet-300">v{ev.variant}</span>}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">{relTime(ev.at)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── A/B tests card (multi-test: hero + section-level) ───────────────────────
+
+function AbVariantRow({ v, isWinner, primary }: { v: AbVariantResult; isWinner: boolean; primary: boolean }) {
+  return (
+    <div className={cn("rounded-lg border p-3 transition-colors", isWinner ? "border-amber-500/40 bg-amber-500/[0.04]" : "border-zinc-800 bg-zinc-900/50")}>
+      <div className="flex items-center gap-2">
+        <span className={cn("flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold", isWinner ? "bg-amber-400 text-black" : "bg-violet-500/20 text-violet-200")}>{v.name}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-300" title={v.headline}>{v.headline}</span>
+        <span className="font-mono text-[10px] text-zinc-500" title="Traffic weight">w {v.weight}%</span>
+      </div>
+      {/* CTR row */}
+      <div className="mt-2 flex items-center gap-2" title={`Clicks ${v.clicks} of ${v.exposures} exposures`}>
+        <MousePointerClick className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+          <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300" style={{ width: `${Math.round(v.ctr * 100)}%` }} />
+        </div>
+        <span className="w-24 text-right font-mono text-[10px] text-zinc-400">
+          CTR {(v.ctr * 100).toFixed(1)}% · {v.clicks}/{v.exposures}
+        </span>
+      </div>
+      {/* Engagement row — avg duration + engaged share (primary test only:
+          PageView.variant carries a single tag, set from the primary assignment) */}
+      {primary ? (
+        <div className="mt-1.5 flex items-center gap-2" title={`Variant-tagged visits: avg ${fmtDuration(v.avgDuration)} on page · ${Math.round(v.engagedPct * 100)}% engaged`}>
+          <Timer className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+            <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" style={{ width: `${Math.round(v.engagedPct * 100)}%` }} />
+          </div>
+          <span className="flex w-24 items-center justify-end gap-1 font-mono text-[10px] text-zinc-400">
+            {fmtDuration(v.avgDuration)} · {Math.round(v.engagedPct * 100)}%
+          </span>
+        </div>
+      ) : (
+        <p className="mt-1.5 text-right font-mono text-[9px] text-zinc-600" title="Time-on-page / engagement is tracked for the primary (page-level) test only">
+          section-scoped CTR
+        </p>
+      )}
+    </div>
+  )
+}
+
+function AbTestPanel({ test, onPromote }: { test: AbTestResult; onPromote: (t: AbTestResult) => void }) {
+  const withEngagement = test.variants.filter((x) => x.exposures > 0 && (x.avgDuration > 0 || x.engagedPct > 0))
+  const engLeader = withEngagement.length >= 2 ? withEngagement.reduce((best, x) => (x.avgDuration > best.avgDuration ? x : best)) : null
+  return (
+    <div className="space-y-3">
+      {test.winner && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+          <Crown className="h-3.5 w-3.5" />
+          Variant <b>{test.winner}</b> is winning (sample {fmtNum(test.totalExposures)} / {fmtNum(test.sampleSize)} reached) — auto-winner {test.autoWinner ? "ON" : "OFF"}
+        </div>
+      )}
+      {!test.hasData && (
+        <p className="text-[11px] text-zinc-500">
+          No exposures recorded yet — use “Test preview” with a variant selected, or simulate traffic.
+        </p>
+      )}
+      {test.variants.map((v) => (
+        <AbVariantRow key={v.name} v={v} isWinner={v.name === test.winner} primary={test.primary} />
+      ))}
+      {test.winner && (
+        <Button size="sm" className="h-7 w-full gap-1 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] text-white hover:from-violet-600 hover:to-fuchsia-600 lf-glow" onClick={() => onPromote(test)}>
+          <Crown className="h-3 w-3" /> Promote {test.winner} — apply its copy to this {test.sectionLabel.toLowerCase()}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 export function DashboardView() {
   const projectId = useForge((s) => s.project.id)
   const projectName = useForge((s) => s.project.name)
@@ -245,6 +406,41 @@ export function DashboardView() {
   // Falls back silently to REST polling whenever the relay is unreachable.
   const relay = useDashboardRelay(projectId, live)
   const pushConnected = live && relay.connected
+
+  // ── Live events ticker: relay pushes land instantly; REST recentEvents
+  // backfill the list on load (deduped by type+label+variant within 5s).
+  const [ticker, setTicker] = React.useState<TickerItem[]>([])
+  React.useEffect(() => {
+    if (!relay.lastEvent) return
+    const ev: TickerItem = {
+      id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: relay.lastEvent.type,
+      label: relay.lastEvent.label,
+      variant: relay.lastEvent.variant,
+      at: relay.lastEvent.at,
+    }
+    setTicker((prev) => [ev, ...prev.filter((x) => x.id !== ev.id)].slice(0, 12))
+  }, [relay.lastEvent])
+  React.useEffect(() => {
+    if (!data?.recentEvents?.length) return
+    setTicker((prev) => {
+      const rest = data.recentEvents.map((e) => ({
+        id: `rest-${e.id}`,
+        type: e.type,
+        label: e.label,
+        variant: e.variant,
+        at: new Date(e.createdAt).getTime(),
+      }))
+      // keep relay items that are NOT already covered by a REST row
+      const relayOnly = prev.filter(
+        (p) => !p.id.startsWith("rest-") && !rest.some((r) => r.type === p.type && r.label === p.label && r.variant === p.variant && Math.abs(r.at - p.at) < 5000)
+      )
+      return [...relayOnly, ...rest].sort((a, b) => b.at - a.at).slice(0, 12)
+    })
+  }, [data])
+
+  // active A/B test tab (defaults to the primary test)
+  const [abTab, setAbTab] = React.useState<string | null>(null)
 
   const load = React.useCallback(
     async (opts?: { quiet?: boolean }) => {
@@ -302,18 +498,20 @@ export function DashboardView() {
     return () => clearTimeout(t)
   }, [relay.signals, live, load])
 
-  const seed = async () => {
+  const seed = async (mode: "replace" | "append" = "replace") => {
     if (!projectId) return
     setSeeding(true)
     try {
       const res = await fetch("/api/analytics/seed", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId, days: Number(days) }),
+        body: JSON.stringify({ projectId, days: Number(days), mode }),
       })
-      const out = (await res.json()) as { pageviews?: number; events?: number; leads?: number; error?: string }
+      const out = (await res.json()) as { pageviews?: number; events?: number; leads?: number; mode?: string; error?: string }
       if (!res.ok) throw new Error(out.error)
-      toast.success("Demo traffic generated 🌍", { description: `${fmtNum(out.pageviews ?? 0)} pageviews · ${fmtNum(out.events ?? 0)} events · ${out.leads ?? 0} leads` })
+      toast.success(mode === "append" ? "Demo traffic appended 🌍" : "Demo traffic generated 🌍", {
+        description: `+${fmtNum(out.pageviews ?? 0)} pageviews · +${fmtNum(out.events ?? 0)} events${mode === "append" ? " — history kept" : ` · ${out.leads ?? 0} leads`}`,
+      })
       await load()
     } catch (e) {
       toast.error("Seeding failed", { description: e instanceof Error ? e.message : undefined })
@@ -329,15 +527,13 @@ export function DashboardView() {
     return () => clearTimeout(t)
   }, [hasNew])
 
-  const promoteWinner = async () => {
-    const hero = sections.find((s) => s.type === "hero" && s.ab?.enabled)
-    if (!hero || hero.type !== "hero" || !data?.ab?.winner) return
-    const winnerVariant = data.ab.variants.find((v) => v.name === data.ab!.winner)
-    if (!winnerVariant) return
-    updateSection(hero.id, {
-      headline: winnerVariant.headline,
-      ab: { ...hero.ab!, enabled: false },
-    })
+  const promoteWinner = async (test: AbTestResult) => {
+    if (!test.winner) return
+    const section = sections.find((s) => s.id === test.sectionId)
+    if (!section) return
+    const patch = applyVariantPatch(section, test.winner)
+    if (!patch) return
+    updateSection(section.id, patch)
     if (projectId) {
       // persist the promoted config so analytics & reloads agree (await before refetch)
       const updated = useForge.getState().config
@@ -353,10 +549,10 @@ export function DashboardView() {
       void fetch("/api/analytics/track", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId, type: "promote_winner", label: `Promoted variant ${data.ab.winner}`, variant: data.ab.winner }),
+        body: JSON.stringify({ projectId, type: "promote_winner", label: `Promoted ${test.sectionLabel} variant ${test.winner}`, variant: test.winner }),
       })
     }
-    toast.success(`Variant ${data.ab.winner} promoted 👑`, { description: "Winning headline applied to the hero; test paused." })
+    toast.success(`Variant ${test.winner} promoted 👑`, { description: `Winning copy applied to the ${test.sectionLabel.toLowerCase()} section; test paused.` })
     await load()
   }
 
@@ -383,6 +579,7 @@ export function DashboardView() {
   const stats = data?.stats
   const hasData = (stats?.pageviews ?? 0) > 0
   const funnelMax = Math.max(1, ...(data?.funnel.map((f) => f.count) ?? [1]))
+  const abTests = data?.abTests ?? []
 
   return (
     <div className="lf-scroll min-h-0 flex-1 overflow-y-auto bg-zinc-950">
@@ -454,9 +651,21 @@ export function DashboardView() {
             >
               <Globe2 className="h-3 w-3 text-emerald-300" /> View live page
             </Button>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 text-[11px] text-zinc-200 hover:border-violet-500/50" onClick={seed} disabled={seeding}>
-              {seeding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-amber-300" />} Simulate traffic
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 border-zinc-800 bg-zinc-900 text-[11px] text-zinc-200 hover:border-violet-500/50" disabled={seeding}>
+                  {seeding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-amber-300" />} Simulate traffic
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border-zinc-800 bg-zinc-900 text-zinc-100">
+                <DropdownMenuItem className="gap-2 text-[11px] focus:bg-violet-500/20" onClick={() => void seed("replace")} disabled={seeding}>
+                  <RefreshCw className="h-3 w-3" /> Fresh dataset <span className="ml-auto text-[9px] text-zinc-500">wipes history</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="gap-2 text-[11px] focus:bg-violet-500/20" onClick={() => void seed("append")} disabled={seeding}>
+                  <Play className="h-3 w-3" /> Append {days}d <span className="ml-auto text-[9px] text-zinc-500">keeps history</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               size="sm"
@@ -478,7 +687,7 @@ export function DashboardView() {
                 Use “Test preview” in the Studio to record real pageviews & CTA clicks, or generate a realistic 30-day demo dataset.
               </p>
             </div>
-            <Button size="sm" className="gap-1.5 bg-violet-500 text-white hover:bg-violet-600" onClick={seed} disabled={seeding}>
+            <Button size="sm" className="gap-1.5 bg-violet-500 text-white hover:bg-violet-600" onClick={() => void seed("replace")} disabled={seeding}>
               {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />} Generate demo traffic
             </Button>
           </div>
@@ -486,6 +695,9 @@ export function DashboardView() {
           <>
             {/* Live "right now" strip — active visits, ticking timers */}
             <LiveVisitsPanel live={mergedLive ?? data!.live} liveEnabled={live} slug={slug} push={pushConnected} />
+
+            {/* Live events ticker — relay-pushed activity stream */}
+            <LiveEventsPanel items={ticker} push={pushConnected} />
 
             {/* Stat cards */}
             <div className="lf-fade-up-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -649,72 +861,51 @@ export function DashboardView() {
                 </PanelCard>
               </div>
 
-              {/* A/B test */}
+              {/* A/B tests — section-level (hero + any section with a test) */}
               <div style={{ animationDelay: "620ms" }}>
                 <PanelCard
-                  title="A/B test — hero"
+                  title={abTests.length > 1 ? `A/B tests — ${abTests.length} live` : abTests.length === 1 ? `A/B test — ${abTests[0].sectionLabel.toLowerCase()}` : "A/B tests"}
                   icon={Sparkles}
-                  actions={
-                    data!.ab?.winner ? (
-                      <Button size="sm" className="h-6 gap-1 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[10px] text-white hover:from-violet-600 hover:to-fuchsia-600 lf-glow" onClick={promoteWinner}>
-                        <Crown className="h-3 w-3" /> Promote {data!.ab.winner}
-                      </Button>
-                    ) : undefined
-                  }
                 >
-                  {data!.ab?.enabled ? (
-                    <div className="space-y-3">
-                      {data!.ab.winner && (
-                        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
-                          <Crown className="h-3.5 w-3.5" />
-                          Variant <b>{data!.ab.winner}</b> is winning (sample {fmtNum(data!.ab.totalExposures)} / {fmtNum(data!.ab.sampleSize)} reached) — auto-winner {data!.ab.autoWinner ? "ON" : "OFF"}
-                        </div>
-                      )}
-                      {!data!.ab.hasData && <p className="text-[11px] text-zinc-500">No exposures recorded yet — use “Test preview” with a variant selected, or simulate traffic.</p>}
-                      {data!.ab.variants.map((v) => {
-                        // engagement leader (only meaningful once some variant-tagged visits exist)
-                        const withEngagement = data!.ab!.variants.filter((x) => x.exposures > 0 && (x.avgDuration > 0 || x.engagedPct > 0))
-                        const engLeader = withEngagement.length >= 2 ? withEngagement.reduce((best, x) => (x.avgDuration > best.avgDuration ? x : best)) : null
-                        const isEngLeader = engLeader !== null && v.name === engLeader.name && v.avgDuration > 0
-                        return (
-                        <div key={v.name} className={cn("rounded-lg border p-3 transition-colors", v.name === data!.ab!.winner ? "border-amber-500/40 bg-amber-500/[0.04]" : "border-zinc-800 bg-zinc-900/50")}>
-                          <div className="flex items-center gap-2">
-                            <span className={cn("flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold", v.name === data!.ab!.winner ? "bg-amber-400 text-black" : "bg-violet-500/20 text-violet-200")}>{v.name}</span>
-                            <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-300" title={v.headline}>{v.headline}</span>
-                            <span className="font-mono text-[10px] text-zinc-500" title="Traffic weight">w {v.weight}%</span>
-                          </div>
-
-                          {/* CTR row */}
-                          <div className="mt-2 flex items-center gap-2" title={`Clicks ${v.clicks} of ${v.exposures} exposures`}>
-                            <MousePointerClick className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
-                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
-                              <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300" style={{ width: `${Math.round(v.ctr * 100)}%` }} />
-                            </div>
-                            <span className="w-24 text-right font-mono text-[10px] text-zinc-400">
-                              CTR {(v.ctr * 100).toFixed(1)}% · {v.clicks}/{v.exposures}
-                            </span>
-                          </div>
-
-                          {/* Engagement row — avg duration + engaged share of variant-tagged visits */}
-                          <div className="mt-1.5 flex items-center gap-2" title={`Variant-tagged visits: avg ${fmtDuration(v.avgDuration)} on page · ${Math.round(v.engagedPct * 100)}% engaged`}>
-                            <Timer className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
-                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
-                              <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" style={{ width: `${Math.round(v.engagedPct * 100)}%` }} />
-                            </div>
-                            <span className="flex w-24 items-center justify-end gap-1 font-mono text-[10px] text-zinc-400">
-                              {isEngLeader && <Crown className="h-2.5 w-2.5 text-amber-400" aria-label="Holds attention best" />}
-                              {fmtDuration(v.avgDuration)} · {Math.round(v.engagedPct * 100)}%
-                            </span>
-                          </div>
-                        </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
+                  {abTests.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 py-6 text-center">
                       <Sparkles className="h-6 w-6 text-zinc-700" />
-                      <p className="text-[12px] text-zinc-500">No A/B test running.</p>
-                      <p className="max-w-xs text-[10px] text-zinc-600">Enable “A/B test this hero” in the hero section properties (Studio → Section tab) to compare headline variants — CTR, time-on-page and engagement per variant.</p>
+                      <p className="text-[12px] text-zinc-500">No A/B tests running.</p>
+                      <p className="max-w-xs text-[10px] leading-relaxed text-zinc-600">
+                        Enable “A/B test this section” on the hero, pricing, features, testimonials, FAQ, contact or final CTA (Studio → Section tab) — each section runs its own experiment with per-variant CTR.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {abTests.length > 1 && (
+                        <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-1" role="tablist" aria-label="A/B tests">
+                          {abTests.map((t) => {
+                            const active = (abTab ?? abTests[0].key) === t.key
+                            return (
+                              <button
+                                key={t.key}
+                                type="button"
+                                role="tab"
+                                aria-selected={active}
+                                onClick={() => setAbTab(t.key)}
+                                className={cn(
+                                  "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                                  active ? "bg-violet-500/25 text-violet-200" : "text-zinc-500 hover:text-zinc-200"
+                                )}
+                              >
+                                {t.sectionLabel}
+                                {t.primary && <span className="rounded bg-violet-500/20 px-1 text-[8px] font-bold uppercase tracking-wide text-violet-300" title="Primary test — tags the pageview itself (per-variant time-on-page & engagement)">page</span>}
+                                {t.winner && <Crown className="h-2.5 w-2.5 text-amber-400" aria-label="winner" />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {abTests
+                        .filter((t) => t.key === (abTab ?? abTests[0].key))
+                        .map((t) => (
+                          <AbTestPanel key={t.key} test={t} onPromote={(x) => void promoteWinner(x)} />
+                        ))}
                     </div>
                   )}
                 </PanelCard>

@@ -15,7 +15,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { guard, HttpError, parseStoredConfig } from "@/lib/landing/server"
-import type { AnalyticsPayload, HeroSection, LiveVisit } from "@/lib/landing/types"
+import { getAbTests, exposureLabels, abTestLabel } from "@/lib/landing/ab"
+import type { AbTestResult, AnalyticsPayload, LiveVisit } from "@/lib/landing/types"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -149,36 +150,43 @@ export async function GET(req: NextRequest) {
       activeCount: activeVisits.length,
     }
 
-    // ── A/B block (first enabled hero ab) ────────────────────────────────────
+    // ── A/B block — every enabled section-level test (hero first) ─────────
+    // • exposures: variant_exposure events whose label matches the test key
+    //   (hero also accepts its legacy "hero" label from older seeds)
+    // • clicks: the hero (page-level) test counts ANY variant-tagged CTA click;
+    //   section tests only count clicks whose label starts with their section
+    //   type ("pricing: …") — section-scoped attribution
+    // • per-variant duration/engagement only for the primary test (PageView
+    //   .variant carries a single tag, set from the primary assignment)
     const config = parseStoredConfig(project.config)
-    const hero = config.sections.find((s): s is HeroSection => s.type === "hero" && s.ab?.enabled === true)
-    const abCfg = hero?.ab
-    let ab: AnalyticsPayload["ab"] = null
-    if (abCfg) {
-      // per-variant engagement from variant-tagged pageviews
-      const pvByVariant = new Map<string, { total: number; duration: number; engaged: number }>()
-      for (const v of views) {
-        if (!v.variant) continue
-        const agg = pvByVariant.get(v.variant) ?? { total: 0, duration: 0, engaged: 0 }
-        agg.total++
-        agg.duration += v.duration
-        if (!v.isBounce) agg.engaged++
-        pvByVariant.set(v.variant, agg)
-      }
+    const tests = getAbTests(config)
+    const pvByVariant = new Map<string, { total: number; duration: number; engaged: number }>()
+    for (const v of views) {
+      if (!v.variant) continue
+      const agg = pvByVariant.get(v.variant) ?? { total: 0, duration: 0, engaged: 0 }
+      agg.total++
+      agg.duration += v.duration
+      if (!v.isBounce) agg.engaged++
+      pvByVariant.set(v.variant, agg)
+    }
+    const abTests: AbTestResult[] = tests.map(({ section, ab }, testIdx) => {
+      const primary = testIdx === 0
+      const labels = exposureLabels(section)
       const exposuresBy = new Map<string, number>()
       const clicksBy = new Map<string, number>()
       for (const e of events) {
         if (!e.variant) continue
         if (e.type === "variant_exposure") {
-          exposuresBy.set(e.variant, (exposuresBy.get(e.variant) ?? 0) + 1)
+          if (labels.includes(e.label)) exposuresBy.set(e.variant, (exposuresBy.get(e.variant) ?? 0) + 1)
         } else if (e.type === "cta_click") {
-          clicksBy.set(e.variant, (clicksBy.get(e.variant) ?? 0) + 1)
+          const labelMatch = primary || e.label === section.type || e.label.startsWith(`${section.type}:`)
+          if (labelMatch) clicksBy.set(e.variant, (clicksBy.get(e.variant) ?? 0) + 1)
         }
       }
-      const variants = abCfg.variants.map((v) => {
+      const variants = ab.variants.map((v) => {
         const exposures = exposuresBy.get(v.name) ?? 0
         const clicks = clicksBy.get(v.name) ?? 0
-        const pv = pvByVariant.get(v.name)
+        const pv = primary ? pvByVariant.get(v.name) : undefined
         return {
           name: v.name,
           headline: v.headline,
@@ -193,20 +201,38 @@ export async function GET(req: NextRequest) {
       const totalExposures = variants.reduce((s, v) => s + v.exposures, 0)
       const someClicks = variants.some((v) => v.clicks > 0)
       let winner: string | null = null
-      if (abCfg.autoWinner && totalExposures >= abCfg.sampleSize && someClicks) {
+      if (ab.autoWinner && totalExposures >= ab.sampleSize && someClicks) {
         winner = variants.reduce((best, v) => (v.ctr > best.ctr ? v : best)).name
       }
-      ab = {
-        enabled: true,
-        metric: abCfg.metric,
-        autoWinner: abCfg.autoWinner,
-        sampleSize: abCfg.sampleSize,
+      return {
+        key: section.id,
+        sectionId: section.id,
+        sectionType: section.type,
+        sectionLabel: abTestLabel(config, section),
+        metric: ab.metric,
+        autoWinner: ab.autoWinner,
+        sampleSize: ab.sampleSize,
         variants,
         winner,
         totalExposures,
         hasData: totalExposures > 0,
+        primary,
       }
-    }
+    })
+    // legacy single-test payload: the primary (first) test, when any
+    const primaryTest = abTests[0] ?? null
+    const ab: AnalyticsPayload["ab"] = primaryTest
+      ? {
+          enabled: true,
+          metric: primaryTest.metric,
+          autoWinner: primaryTest.autoWinner,
+          sampleSize: primaryTest.sampleSize,
+          variants: primaryTest.variants,
+          winner: primaryTest.winner,
+          totalExposures: primaryTest.totalExposures,
+          hasData: primaryTest.hasData,
+        }
+      : null
 
     const payload: AnalyticsPayload = {
       stats: { pageviews, uniqueVisitors, bounceRate, avgDuration, ctaClicks, conversionRate },
@@ -218,6 +244,7 @@ export async function GET(req: NextRequest) {
       funnel,
       live,
       ab,
+      abTests,
       recentEvents: recent.map((e) => ({
         id: e.id,
         type: e.type,

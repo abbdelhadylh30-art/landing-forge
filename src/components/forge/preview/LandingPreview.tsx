@@ -4,6 +4,7 @@ import type { HeroSection, LandingConfig, Section } from "@/lib/landing/types"
 import { SECTION_META } from "@/lib/landing/types"
 
 import { themeStyle } from "@/lib/landing/themes"
+import { abOverrideFor } from "@/lib/landing/ab"
 
 import { cn } from "@/lib/utils"
 
@@ -11,8 +12,10 @@ import { SectionRenderer } from "./SectionRenderer"
 
 export interface LandingPreviewProps {
   config: LandingConfig
-  /** Forced A/B variant name (e.g. "A" | "B") used to preview the hero. */
+  /** Forced variant name for the hero/primary test (legacy single-test switcher). */
   abVariant?: string | null
+  /** Per-section forced variants (sectionId → variant name) — section-level A/B. */
+  abVariants?: Record<string, string> | null
   onCtaClick?: (section: Section, label: string) => void
   onFormSubmit?: (section: Section, data: Record<string, string>) => void
   className?: string
@@ -32,6 +35,7 @@ export interface LandingPreviewProps {
 export function LandingPreview({
   config,
   abVariant,
+  abVariants,
   onCtaClick,
   onFormSubmit,
   className,
@@ -41,7 +45,9 @@ export function LandingPreview({
 }: LandingPreviewProps) {
   const hero = config.sections.find((s): s is HeroSection => s.type === "hero" && s.ab?.enabled === true)
   const ab = hero?.ab
-  const variant = ab && abVariant ? ab.variants.find((v) => v.name === abVariant) : undefined
+  // hero variant: per-section map wins, legacy prop is the fallback
+  const heroVariantName = (hero && abVariants?.[hero.id]) || abVariant || null
+  const variant = ab && heroVariantName ? ab.variants.find((v) => v.name === heroVariantName) : undefined
   const abOverride =
     hero && variant
       ? {
@@ -50,6 +56,12 @@ export function LandingPreview({
           ctaLabel: variant.ctaLabel ?? hero.cta.label,
         }
       : null
+
+  /** Per-section A/B override: resolves the forced (or assigned) variant for any section. */
+  const overrideFor = (section: Section) =>
+    section.type === "hero"
+      ? abOverride
+      : abOverrideFor(section, abVariants?.[section.id] ?? null)
 
   const visible = config.sections.filter((s) => !s.hidden)
   // Stable anchor targets: by default the first section of each type gets an id
@@ -139,7 +151,7 @@ export function LandingPreview({
                     section={section}
                     brandName={config.brand.name}
                     brandLogo={config.brand.logoUrl}
-                    abOverride={abOverride}
+                    abOverride={overrideFor(section)}
                     onCtaClick={onCtaClick}
                     onFormSubmit={onFormSubmit}
                   />
@@ -154,7 +166,7 @@ export function LandingPreview({
               section={section}
               brandName={config.brand.name}
               brandLogo={config.brand.logoUrl}
-              abOverride={abOverride}
+              abOverride={overrideFor(section)}
               onCtaClick={onCtaClick}
               onFormSubmit={onFormSubmit}
             />
@@ -170,7 +182,7 @@ export function LandingPreview({
                 section={section}
                 brandName={config.brand.name}
                 brandLogo={config.brand.logoUrl}
-                abOverride={abOverride}
+                abOverride={overrideFor(section)}
                 onCtaClick={onCtaClick}
                 onFormSubmit={onFormSubmit}
               />

@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
 import { useUi } from "@/lib/landing/uiStore"
 import { SECTION_META } from "@/lib/landing/types"
+import { sectionAb } from "@/lib/landing/ab"
 import { CONTENT_PACK_COUNT } from "@/lib/landing/contentPacks"
 import type { Section } from "@/lib/landing/types"
 
@@ -36,6 +37,7 @@ function SortableRow({ section, index }: { section: Section; index: number }) {
   const toggleHidden = useForge((s) => s.toggleHidden)
   const selected = selectedId === section.id
   const meta = SECTION_META[section.type]
+  const abOn = sectionAb(section)?.enabled === true
 
   const layoutInfo =
     section.type === "hero"
@@ -86,8 +88,18 @@ function SortableRow({ section, index }: { section: Section; index: number }) {
           </span>
           <span className="text-sm leading-none">{meta.icon}</span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-medium leading-tight text-zinc-100">
-              {index + 1}. {meta.label}
+            <span className="flex items-center gap-1.5">
+              <span className="min-w-0 truncate text-[12px] font-medium leading-tight text-zinc-100">
+                {index + 1}. {meta.label}
+              </span>
+              {abOn && (
+                <span
+                  className="shrink-0 rounded bg-violet-500/15 px-1 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-violet-300"
+                  title="A/B test running on this section — see Analytics for results"
+                >
+                  A/B
+                </span>
+              )}
             </span>
             {layoutInfo && <span className="block truncate font-mono text-[9px] leading-tight text-zinc-500">{layoutInfo}</span>}
           </span>

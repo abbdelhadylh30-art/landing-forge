@@ -28,6 +28,10 @@ export interface AbConfig {
   variants: AbVariant[]
 }
 
+/** Section types that support their own A/B test (variants override title/headline + sub + CTA label). */
+export const AB_SECTION_TYPES = ["hero", "features", "testimonials", "pricing", "faq", "contact", "cta-final"] as const
+export type AbSectionType = (typeof AB_SECTION_TYPES)[number]
+
 // ── Sections ─────────────────────────────────────────────────────────────────
 export interface NavbarSection {
   id: string
@@ -80,6 +84,7 @@ export interface FeaturesSection {
   style: "grid" | "alternating" | "bento" | "tabs" | "carousel"
   columns?: number // 2 | 3 | 4 for grid
   items: FeatureItem[]
+  ab?: AbConfig
 }
 
 export interface StatsItem {
@@ -114,6 +119,7 @@ export interface TestimonialsSection {
   subtitle?: string
   style: "grid" | "marquee" | "spotlight" | "video" | "logo-wall"
   items: TestimonialItem[]
+  ab?: AbConfig
 }
 
 export interface PricingPlan {
@@ -136,6 +142,7 @@ export interface PricingSection {
   annualToggle?: boolean
   annualDiscountLabel?: string
   plans: PricingPlan[]
+  ab?: AbConfig
 }
 
 export interface FaqItem {
@@ -152,6 +159,7 @@ export interface FaqSection {
   subtitle?: string
   style: "accordion" | "twocol"
   items: FaqItem[]
+  ab?: AbConfig
 }
 
 export interface GalleryItem {
@@ -183,6 +191,7 @@ export interface ContactSection {
   phone?: string
   fields: string[] // labels of inputs to render
   submitLabel: string
+  ab?: AbConfig
 }
 
 export interface CtaFinalSection {
@@ -194,6 +203,7 @@ export interface CtaFinalSection {
   sub?: string
   cta: Cta
   note?: string
+  ab?: AbConfig
 }
 
 export interface FooterLinkGroup {
@@ -358,6 +368,23 @@ export interface AbVariantResult {
   engagedPct: number // 0-1 — share of exposed visits that engaged (≥15s or interacted)
 }
 
+/** One section-scoped A/B test in the analytics payload (hero, pricing, final CTA…). */
+export interface AbTestResult {
+  key: string // exposure event label key (section id; hero additionally matches legacy "hero")
+  sectionId: string
+  sectionType: string
+  sectionLabel: string // human label, e.g. "Hero" / "Pricing"
+  metric: string
+  autoWinner: boolean
+  sampleSize: number
+  variants: AbVariantResult[]
+  winner: string | null
+  totalExposures: number
+  hasData: boolean
+  /** True for the page-level (primary) test — the only one with per-variant duration/engagement (PageView.variant holds a single tag). */
+  primary: boolean
+}
+
 /** An active visit on the published page ("who's here right now"). */
 export interface LiveVisit {
   id: string
@@ -395,6 +422,8 @@ export interface AnalyticsPayload {
     totalExposures: number
     hasData: boolean
   } | null
+  /** Every enabled section-level A/B test (hero first, then section order). `ab` is the primary/first entry. */
+  abTests: AbTestResult[]
   recentEvents: {
     id: string
     type: string

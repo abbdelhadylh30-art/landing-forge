@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
+import { getAbTests, abTestLabel } from "@/lib/landing/ab"
 import { LandingPreview } from "@/components/forge/preview/LandingPreview"
 import { track, detectDevice, detectBrowser } from "@/components/forge/shared/tracking"
 import type { Section } from "@/lib/landing/types"
@@ -24,11 +25,14 @@ export function DevicePreview({ className }: { className?: string }) {
   const setPreviewMode = useForge((s) => s.setPreviewMode)
   const abVariant = useForge((s) => s.abPreviewVariant)
   const setAbVariant = useForge((s) => s.setAbPreviewVariant)
+  const abVariants = useForge((s) => s.abPreviewVariants)
+  const setAbVariantFor = useForge((s) => s.setAbPreviewVariantFor)
   const selectedSectionId = useForge((s) => s.selectedSectionId)
   const selectSection = useForge((s) => s.selectSection)
   const projectId = useForge((s) => s.project.id)
 
-  const heroAb = config.sections.find((s): s is Extract<Section, { type: "hero" }> => s.type === "hero" && s.ab?.enabled === true)?.ab
+  // every enabled section-level test (hero first)
+  const abTests = React.useMemo(() => getAbTests(config), [config])
 
   const trackedViewRef = React.useRef(false)
   const scrollRef = React.useRef<HTMLDivElement>(null)
@@ -43,14 +47,19 @@ export function DevicePreview({ className }: { className?: string }) {
         browser: detectBrowser(),
         duration: 0,
         isBounce: false,
+        ...(abTests.length && (abVariants[abTests[0].section.id] ?? abVariant)
+          ? { variant: abVariants[abTests[0].section.id] ?? abVariant ?? undefined }
+          : {}),
       })
-      if (heroAb && abVariant) {
-        track(projectId, { type: "variant_exposure", variant: abVariant, label: "hero" })
+      // record an exposure for every section-level test being previewed
+      for (const t of abTests) {
+        const v = abVariants[t.section.id] ?? (t.section.type === "hero" ? abVariant : null)
+        if (v) track(projectId, { type: "variant_exposure", variant: v, label: t.section.id })
       }
       toast.info("Pageview tracked 🔎", { description: "Privacy-friendly — no cookies, anonymous visitor id." })
     }
     if (!previewMode) trackedViewRef.current = false
-  }, [previewMode, projectId, device, heroAb, abVariant])
+  }, [previewMode, projectId, device, abTests, abVariants, abVariant])
 
   // Reset scroll when switching sections
   React.useEffect(() => {
@@ -71,7 +80,14 @@ export function DevicePreview({ className }: { className?: string }) {
 
   const handleCtaClick = (section: Section, label: string) => {
     if (!projectId) return
-    track(projectId, { type: "cta_click", label: `${section.type}: ${label}`, variant: heroAb?.enabled && abVariant ? abVariant : undefined })
+    // clicks attribute to the section's own test when it has one, else the primary test's variant
+    const ownVariant = abVariants[section.id]
+    const primaryVariant = abTests.length ? abVariants[abTests[0].section.id] ?? abVariant : null
+    track(projectId, {
+      type: "cta_click",
+      label: `${section.type}: ${label}`,
+      variant: ownVariant ?? primaryVariant ?? undefined,
+    })
     toast.success("CTA click tracked 🎯", { description: label })
   }
 
@@ -126,24 +142,53 @@ export function DevicePreview({ className }: { className?: string }) {
           ))}
         </div>
 
-        {/* A/B variant switcher */}
-        {heroAb?.enabled && (
-          <div className="flex items-center gap-1 rounded-lg border border-violet-500/30 bg-violet-500/5 p-0.5" role="group" aria-label="A/B variant preview">
-            <span className="px-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-300">A/B</span>
-            {heroAb.variants.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => setAbVariant(v.name)}
-                title={`Variant ${v.name} — ${v.headline}`}
-                className={cn(
-                  "h-6 rounded-md px-2 text-[11px] font-semibold transition-colors",
-                  abVariant === v.name ? "bg-violet-500 text-white" : "text-violet-300 hover:bg-violet-500/20"
-                )}
-              >
-                {v.name}
-              </button>
-            ))}
+        {/* A/B variant switchers — one compact group per active section-level test */}
+        {abTests.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1" role="group" aria-label="A/B variant preview">
+            {abTests.map(({ section, ab }) => {
+              const label = abTestLabel(config, section)
+              const active = section.type === "hero" ? abVariants[section.id] ?? abVariant : abVariants[section.id]
+              const setVariant = (v: string) => {
+                setAbVariantFor(section.id, v)
+                if (section.type === "hero") setAbVariant(v) // keep the legacy selector in sync
+              }
+              return (
+                <div
+                  key={section.id}
+                  className={cn(
+                    "flex items-center gap-1 rounded-lg border p-0.5",
+                    section.type === "hero" ? "border-violet-500/30 bg-violet-500/5" : "border-fuchsia-500/25 bg-fuchsia-500/5"
+                  )}
+                >
+                  <span
+                    className={cn("px-1.5 text-[10px] font-bold uppercase tracking-wider", section.type === "hero" ? "text-violet-300" : "text-fuchsia-300")}
+                    title={`${label} A/B test — ${ab.variants.length} variants`}
+                  >
+                    {abTests.length > 1 ? label.slice(0, 10) : "A/B"}
+                  </span>
+                  {ab.variants.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setVariant(v.name)}
+                      title={`Variant ${v.name} — ${v.headline}`}
+                      className={cn(
+                        "h-6 rounded-md px-2 text-[11px] font-semibold transition-colors",
+                        active === v.name
+                          ? section.type === "hero"
+                            ? "bg-violet-500 text-white"
+                            : "bg-fuchsia-500 text-white"
+                          : section.type === "hero"
+                            ? "text-violet-300 hover:bg-violet-500/20"
+                            : "text-fuchsia-300 hover:bg-fuchsia-500/20"
+                      )}
+                    >
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
           </div>
         )}
 
@@ -170,7 +215,7 @@ export function DevicePreview({ className }: { className?: string }) {
             className="mx-auto min-h-full transition-all duration-300"
             style={width ? { width, maxWidth: "100%" } : { width: "100%" }}
           >
-            <LandingPreview config={config} abVariant={abVariant} onCtaClick={handleCtaClick} onFormSubmit={handleFormSubmit} className="min-h-full" />
+            <LandingPreview config={config} abVariant={abVariant} abVariants={abVariants} onCtaClick={handleCtaClick} onFormSubmit={handleFormSubmit} className="min-h-full" />
           </div>
         </div>
       ) : (
@@ -197,6 +242,7 @@ export function DevicePreview({ className }: { className?: string }) {
               <LandingPreview
                 config={config}
                 abVariant={abVariant}
+                abVariants={abVariants}
                 selectionMode
                 selectedSectionId={selectedSectionId}
                 onSectionSelect={selectSection}

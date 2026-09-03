@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils"
 import { LandingPreview } from "@/components/forge/preview/LandingPreview"
 import { track, pingEngagement, detectDevice, detectBrowser, getVisitorId } from "@/components/forge/shared/tracking"
 import { useVisitorRelay } from "@/components/forge/shared/livesocket"
-import type { HeroSection, LandingConfig, ProjectSummary, ProjectWithConfig, Section } from "@/lib/landing/types"
+import { getAbTests, assignAbVariants, sectionAb } from "@/lib/landing/ab"
+import type { LandingConfig, ProjectSummary, ProjectWithConfig, Section } from "@/lib/landing/types"
 
 type LoadState =
   | { kind: "loading" }
@@ -16,35 +17,7 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; project: ProjectWithConfig }
 
-/** Weighted pick of an A/B variant name (e.g. 50/50 → "A" | "B"), memo-stable per project+visitor. */
-function assignVariant(hero: HeroSection, projectId: string): string {
-  const key = `lf-ab-assign-${projectId}`
-  try {
-    const stored = window.localStorage.getItem(key)
-    if (stored && hero.ab?.variants.some((v) => v.name === stored)) return stored
-  } catch {
-    /* storage unavailable — just pick */
-  }
-  const variants = hero.ab?.variants ?? []
-  const total = variants.reduce((sum, v) => sum + Math.max(1, v.weight), 0)
-  let roll = Math.random() * total
-  let picked = variants[0]?.name ?? "A"
-  for (const v of variants) {
-    roll -= Math.max(1, v.weight)
-    if (roll <= 0) {
-      picked = v.name
-      break
-    }
-  }
-  try {
-    window.localStorage.setItem(key, picked)
-  } catch {
-    /* ignore */
-  }
-  return picked
-}
-
-/** A live self-refreshing "time on page" ticker (mm:ss). */
+/** Live self-refreshing "time on page" ticker (mm:ss). */
 function SessionTimer({ since }: { since: number }) {
   const [, force] = React.useReducer((x: number) => x + 1, 0)
   React.useEffect(() => {
@@ -65,6 +38,8 @@ function SessionTimer({ since }: { since: number }) {
 export function PublishedPage({ slug }: { slug: string }) {
   const [state, setState] = React.useState<LoadState>({ kind: "loading" })
   const [variant, setVariant] = React.useState<string | null>(null)
+  /** sectionId → assigned variant (per section-level test) */
+  const [variantMap, setVariantMap] = React.useState<Record<string, string>>({})
   const [chromeOpen, setChromeOpen] = React.useState(true)
   const [copied, setCopied] = React.useState(false)
 
@@ -122,19 +97,24 @@ export function PublishedPage({ slug }: { slug: string }) {
     }
   }, [slug])
 
-  // ── Visitor tracking: pageview + A/B exposure, once per visit
-  // The variant is assigned BEFORE the pageview so the visit record itself is
-  // variant-tagged (powers per-variant duration/engagement in analytics).
+  // ── Visitor tracking: pageview + A/B exposures, once per visit ────────────
+  // Every enabled section test gets an independent, localStorage-stable
+  // assignment. The PRIMARY test's variant (hero first) also tags the pageview
+  // record itself — that powers per-variant duration/engagement in analytics.
   React.useEffect(() => {
     if (state.kind !== "ready" || trackedOnceRef.current) return
     trackedOnceRef.current = true
     const { id, config } = state.project
 
-    const hero = config.sections.find((s): s is HeroSection => s.type === "hero" && s.ab?.enabled === true)
-    const assigned = hero ? assignVariant(hero, id) : null
-    if (assigned) {
-      setVariant(assigned)
-      void track(id, { type: "variant_exposure", variant: assigned, label: "hero", path: `/${slug}` })
+    const tests = getAbTests(config)
+    const assigned = tests.length ? assignAbVariants(id, tests) : {}
+    const primary = tests[0] ?? null
+    const primaryName = primary ? assigned[primary.section.id] : null
+
+    setVariantMap(assigned)
+    setVariant(primaryName)
+    for (const t of tests) {
+      void track(id, { type: "variant_exposure", variant: assigned[t.section.id], label: t.section.id, path: `/${slug}` })
       setEvents((n) => n + 1)
     }
 
@@ -144,7 +124,7 @@ export function PublishedPage({ slug }: { slug: string }) {
       device: detectDevice(),
       browser: detectBrowser(),
       visitorId: getVisitorId(),
-      variant: assigned ?? undefined,
+      variant: primaryName ?? undefined,
       duration: 0,
       isBounce: true, // provisional bounce — engagement pings de-bounce this visit
     }).then((pageviewId) => {
@@ -215,15 +195,17 @@ export function PublishedPage({ slug }: { slug: string }) {
       if (pageviewIdRef.current) void pingEngagement(pageviewIdRef.current, { duration: Math.floor((Date.now() - sessionStartRef.current) / 1000), engaged: true })
       setClicks((n) => n + 1)
       setEvents((n) => n + 1)
+      // clicks attribute to the section's own test when it has one, else the primary variant
+      const tagged = sectionAb(section)?.enabled ? variantMap[section.id] : variant
       void track(projectId, {
         type: "cta_click",
         label: `${section.type}: ${label}`,
-        variant: variant ?? undefined,
+        variant: tagged ?? undefined,
         path: `/${slug}`,
       })
       toast.success("CTA click tracked 🎯", { description: label })
     },
-    [projectId, variant, slug, relay.heartbeat]
+    [projectId, variant, variantMap, slug, relay.heartbeat]
   )
 
   const handleFormSubmit = React.useCallback(
@@ -316,6 +298,7 @@ export function PublishedPage({ slug }: { slug: string }) {
       <LandingPreview
         config={config!}
         abVariant={variant}
+        abVariants={variantMap}
         onCtaClick={handleCtaClick}
         onFormSubmit={handleFormSubmit}
         className="min-h-full"
@@ -352,6 +335,14 @@ export function PublishedPage({ slug }: { slug: string }) {
 
             {/* session telemetry */}
             <span className="hidden items-center gap-3 font-mono text-[10px] text-zinc-400 md:flex" aria-label="Your visit is being tracked, privacy-friendly">
+              {variant && (
+                <span
+                  className="flex items-center gap-1 rounded bg-violet-500/15 px-1.5 py-0.5 font-bold text-violet-300"
+                  title={`You are in A/B group ${variant} — this visit's engagement counts toward that variant`}
+                >
+                  <span className="text-[9px] uppercase tracking-wider">grp</span> {variant}
+                </span>
+              )}
               <span className="flex items-center gap-1" title={savedDuration > 0 ? `Time on page — synced to analytics (${savedDuration}s saved)` : "Time on page — synced to analytics every 15s"}>
                 <Timer className={cn("h-3 w-3", savedDuration > 0 && "text-emerald-400/80")} />
                 <SessionTimer since={sessionStartRef.current} />

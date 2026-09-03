@@ -621,3 +621,66 @@ Next-phase priority order:
 3. **Fonts depth** — optional Google-Fonts loading (2–3 curated pairs w/ preconnect) for users who want brand-true type; keep system stacks as the offline default.
 4. **Seed-script options** — "keep historical rows" append mode (currently wipes) so engagement history survives demo re-seeds; also seed a couple of long-duration engaged visits for a richer story.
 5. Smaller: readiness check for logo/brand consistency (R10 #3 leftover), mobile toolbar compaction if 2 rows feel tight on small phones, CSV export of the live-strip snapshot.
+
+---
+Task ID: R12
+Agent: main (Z.ai Code)
+Task: Round 12 — Section-level A/B testing (R11 #1), live events ticker (R11 #2), seed append mode (R11 #4), styling polish
+
+Work Log:
+- QA baseline (agent-browser via gateway :81, relay health-checked): STABLE — 0 page/console errors across studio/analytics/projects/published; analytics-live daemon healthy (visitors tracked instantly). No bugs found → feature work per R11 handover priorities.
+- NEW FEATURE — SECTION-LEVEL A/B TESTING (R11 priority #1, the headline feature):
+  - types.ts: `ab?: AbConfig` added to Features/Testimonials/Pricing/Faq/Contact/CtaFinal sections (hero had it); `AB_SECTION_TYPES` const; new `AbTestResult` type; `AnalyticsPayload.abTests: AbTestResult[]` (legacy `ab` kept = primary test).
+  - New `src/lib/landing/ab.ts` (single source of truth): `sectionAb`, `getAbTests` (hero first = primary), `primaryAbTest`, `exposureLabels` (hero accepts legacy "hero" label OR section id — old seeded data keeps working), `assignAbVariants` (localStorage-cached weighted pick per visitor+section), `abOverrideFor` (per-type field mapping: headline→headline|title, sub→sub|subtitle, ctaLabel→cta.label|submitLabel; empty variant fields fall back to base), `applyVariantPatch` (promote: applies winning copy + disables test), `abTestLabel` (Hero/Pricing + A/B suffix when type repeats), `AB_VARIANT_B_SUGGESTIONS` (quality starter copy per type).
+  - SectionRenderer: variant overrides MERGED INTO the section object before dispatch — section components stay variant-agnostic. LandingPreview: new `abVariants?: Record<sectionId, variant>` prop (legacy `abVariant` = hero fallback); per-section override resolution.
+  - PropertiesPanel: hero's inline A/B block extracted into reusable `AbTestFields` component (per-section field labels, ctaLabel hidden where no single CTA, type-aware B suggestions, aria-label on the switch) — wired into ALL 7 editors (hero, features, testimonials, pricing, faq, contact, cta-final).
+  - PublishedPage: per-test variant assignment (`assignAbVariants`), one `variant_exposure` per test (label = section id), pageview.variant = PRIMARY test's pick, CTA clicks attribute to the section's own test when it has one else the primary variant.
+  - DevicePreview: one compact A/B switcher group per active test (hero=violet, sections=fuchsia, label = section label when >1 test); test-preview tracking emits exposures for every test. CommandPalette: A/B group generalized — per-test entries with test label prefix. SectionsPanel: violet "A/B" badge on sections with a running test.
+  - store.ts: `abPreviewVariants: Record<sectionId, variant>` + `setAbPreviewVariantFor`; duplicateSection disables ab for ANY section copy (was hero-only); dead `abResolvedHero` removed.
+  - analytics route: `abTests` array computed from ALL enabled tests — exposures grouped by label match (hero: "hero"||id, others: section id); clicks: hero (page-level) test = ANY variant-tagged cta_click (legacy semantics), section tests = label-prefix scoped (`pricing:*`); per-variant avgDuration/engagedPct only for the primary test (PageView.variant carries a single tag — documented in the UI with "section-scoped CTR" note); per-test winner + auto-winner.
+  - seed route: every enabled test gets its own exposure stream (label = section id, ~70% of views, config weights) + section-scoped biased clicks (label = section type, last variant ~1.8x CTR) — verified: Hero 1401 exposures/443 clicks + Pricing 1395/226, both with winner B.
+  - yaml.ts: `validAb()` sanitizer — ab blocks validated on normalize (round-trip VERIFIED: valid 2-variant ab preserved on pricing; invalid 1-variant dropped).
+  - readiness.ts: hero A/B check reads via getAbTests; new "Section experiments" pass check (weight 5) appears when section tests exist (percentage scoring unaffected).
+  - DashboardView: A/B card → multi-test (tab bar with section labels + "page" pill on primary + crown on winners when >1 test; per-test variant rows; per-test Promote button). promoteWinner generalized via `applyVariantPatch` — VERIFIED E2E: pricing B promoted → title "Simple plans that scale with you" applied, test disabled, hero test untouched, config persisted to DB.
+- NEW FEATURE — LIVE EVENTS TICKER (R11 priority #2): `LiveEventsPanel` on the dashboard under "Right now" — last 8 events (cta_click/form_submit/variant_exposure/pageview) with per-type icon chips, variant badges, relative timestamps ("12s ago", ticking), `lf-ticker-in` entrance animation (globals.css). Fed by `relay.lastEvent` pushes + REST recentEvents backfill (deduped by type+label+variant within 5s). VERIFIED: CTA click in another tab appeared in the ticker instantly over WS.
+- NEW FEATURE — SEED APPEND MODE (R11 priority #4): POST /api/analytics/seed accepts `mode: "replace"|"append"` (default replace); append keeps history — VERIFIED: 2046 + 439 = 2485 pageviews. Dashboard "Simulate traffic" is now a dropdown (Fresh dataset / Append Nd keeps history). Deep-reader visits (300–900s, non-bounce, last 48h, 2–5 rows) seeded in both modes — avg duration now tells a richer story (71s).
+- Styling polish: A/B badges in sections list, "grp X" variant pill in the published-page chrome (visitor sees their test group), ticker animation, per-test tab bar, fuchsia section-test switcher groups, a11y labels on A/B switches.
+- Final regression: fresh sessions 0 console/page errors (studio, analytics, projects, published); mobile 390px no overflow (dashboard + published); lint 0/0; tsc clean (app code); dev.log all 200s; relay healthy. Vertex (no tests) → empty abTests + "No A/B tests running" card; Bean Route hero test (winner B) + legacy seeded data both flow into the new payload shape unchanged.
+
+Stage Summary:
+- A/B testing is now section-level: hero, pricing, features, testimonials, FAQ, contact and final CTA can each run their own experiment — variants override title/headline + sub + CTA label, with weighted per-visitor assignment, per-section exposure events, section-scoped click attribution, per-test winners and per-test promote. The hero remains the page-level (primary) test that tags the pageview itself.
+- The dashboard shows all tests in one tabbed card, and a live "Latest activity" ticker streams events the instant they happen (relay) with REST backfill.
+- Seeding supports append mode (history kept) + deep-reader visits, exposed in the UI as a dropdown.
+- QA methodology unchanged: relay features MUST be tested via http://localhost:81/ (Caddy gateway), never localhost:3000 directly.
+
+---
+Task ID: R12-HANDOVER
+Agent: main (Z.ai Code)
+Task: Round 12 handover — status / goals / risks & next priorities
+
+## 1. Current project status assessment
+- **Stable and feature-complete through R12.** Dev server healthy, `bun run lint` 0/0, `tsc --noEmit` clean for app code, 0 page/console errors on fresh sessions through the gateway (:81), dev.log all-200s, analytics-live relay daemon healthy.
+- All three R11 priority items shipped: section-level A/B (#1), live events ticker (#2), seed append mode (#4). Font depth (#3) and remaining small items are still open (see priorities).
+- Bean Route demo state: hero test live (winner B per seeded data), pricing test was created + promoted during QA (demonstrating the full loop). Vertex: seeded 5d, no tests (empty state verified).
+
+## 2. Current goals / completed modifications / verification results
+Goals: QA triage (stable) → ship section-level A/B + live ticker + seed append + polish.
+- Section-level A/B: full loop VERIFIED E2E — enable test on pricing in the studio → variant editor w/ type-aware labels → preview switcher shows 2 groups (Hero/Pricing) → variant B title renders in preview → autosave persists → seed generates per-test exposures/clicks with biased winners → dashboard tabbed card → Promote B applies copy + disables test + persists. Published page: per-test assignment, exposures with section-id labels (hero also matches legacy "hero" label — old data intact), CTA clicks attribute to the section's own test.
+- Live ticker: relay event:new pushes + REST backfill with 5s dedupe; cross-tab click appeared instantly.
+- Seed append: 2046+439=2485 pageviews (history kept); deep readers added; dropdown UI.
+- YAML roundtrip with section ab validated (valid preserved, invalid dropped).
+
+## 3. Unresolved issues / risks + next-phase priorities
+Known limitations / risks:
+- Per-variant time-on-page/engagement exists only for the PRIMARY test (PageView.variant is a single column) — section tests show section-scoped CTR only; the UI says so ("section-scoped CTR" note). Multi-test per-variant duration would need a per-section variant map on PageView (schema change).
+- Click attribution for section tests relies on the event label prefix matching the section TYPE; two same-type sections with tests share attribution (rare; acceptable at demo scale).
+- The analytics relay is single-instance in-memory (restart drops presence; clients re-join automatically) — unchanged from R11.
+- CSV export does not include the per-test exposure table (pageviews/events rows carry the variant tags though).
+- Seeded section-test clicks use label = section type (e.g. "pricing") rather than the full live label format ("pricing: Plan: CTA") — both match the prefix rule, so counts are correct.
+
+Next-phase priority order:
+1. **Per-test variant storage** (if more depth wanted): add a `variantMap` JSON column on PageView so every test gets per-variant duration/engagement — requires a prisma migration + analytics route changes.
+2. **Fonts depth** (carried from R11 #3): optional Google-Fonts loading (2–3 curated pairs w/ preconnect) alongside the system stacks.
+3. **Ticker depth**: CSV export of the live strip, pause/resume on the ticker, click-through from a ticker row to the relevant A/B test tab.
+4. **A/B suggestions in readiness**: readiness audit could suggest "your pricing section has no test — pricing copy is a high-leverage experiment".
+5. Smaller (R11 leftovers): mobile toolbar compaction on very small screens, logo/brand consistency readiness check.

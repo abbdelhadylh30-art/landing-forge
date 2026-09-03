@@ -1,5 +1,6 @@
 import type { LandingConfig } from "./types"
 import { collectAnchorLinks, findBrokenAnchorLinks } from "./anchors"
+import { getAbTests } from "./ab"
 
 export type ReadinessLevel = "pass" | "warn" | "fail"
 
@@ -101,18 +102,36 @@ export function auditConfig(config: LandingConfig): ReadinessReport {
       selectSectionId: hero.id,
     })
 
-    const abOn = hero.ab?.enabled === true
+    const heroTests = getAbTests({ sections: [hero] })
+    const abOn = heroTests.length > 0
     checks.push({
       id: "ab",
       category: "conversion",
       label: "A/B experiment",
       detail: abOn
-        ? `Live with ${hero.ab?.variants.length ?? 0} variants — winner auto-promotes at ${hero.ab?.sampleSize ?? 0} exposures.`
+        ? `Live with ${heroTests[0].ab.variants.length} variants — winner auto-promotes at ${heroTests[0].ab.sampleSize} exposures.`
         : "No A/B test on the hero. Enable one to let data pick your best headline.",
       level: abOn ? "pass" : "warn",
       weight: 5,
       selectSectionId: hero.id,
     })
+  }
+
+  // section-level experiments beyond the hero (pricing, final CTA…)
+  {
+    const allTests = getAbTests(config)
+    const sectionTests = allTests.filter((t) => t.section.type !== "hero")
+    if (sectionTests.length > 0) {
+      checks.push({
+        id: "ab-sections",
+        category: "conversion",
+        label: "Section experiments",
+        detail: `${sectionTests.length} section-level test${sectionTests.length > 1 ? "s" : ""} live — ${sectionTests.map((t) => t.section.type).join(", ")}.`,
+        level: "pass",
+        weight: 5,
+        selectSectionId: sectionTests[0].section.id,
+      })
+    }
   }
 
   checks.push(

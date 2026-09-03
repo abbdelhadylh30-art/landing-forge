@@ -2,29 +2,33 @@
 // /api/analytics/seed — realistic DEMO traffic generator ("Simulate traffic")
 //
 // POST /api/analytics/seed
-// body: { projectId, days?: number = 30 }
-// → 200 { ok: true, pageviews: number, events: number } | 400 | 404
+// body: { projectId, days?: number = 30, mode?: "replace" | "append" = "replace" }
+// → 200 { ok: true, pageviews: number, events: number, leads: number, mode } | 400 | 404
 //
-// Wipes existing PageViews + Events (and seeds fresh Leads) for the project,
-// then seeds:
+// mode "replace" (default) wipes existing PageViews + Events + Leads first;
+// mode "append" keeps history and adds the new rows on top.
+//
+// Seeds:
 //  - per-day pageviews (40 + rand(0..90), mild upward trend, weekend dip)
 //  - visitor pool ≈ views/2.2 (so unique < pageviews), weighted referrers /
 //    countries / devices / browsers; bounce visits get short durations (1–14s)
 //    and engaged visits 15s+ (consistent with the engagement-ping semantics)
-//  - if hero A/B enabled (≥2 variants): ~70% of views are variant-tagged AND
-//    get variant_exposure (config weights); the LAST variant is biased to also
-//    hold attention (~+40% duration, −⅓ bounce) and clicks at ~1.8x CTR so the
-//    auto-winner + per-variant engagement story works once sample is reached
+//  - EVERY enabled section-level A/B test gets its own exposure stream
+//    (config weights, ~70% of views, label = section id) and biased-last-variant
+//    clicks (label = section type, ~1.8x CTR) so auto-winner + per-variant
+//    engagement stories work once samples are reached. The PRIMARY test
+//    (hero first) also tags the pageview rows themselves.
 //  - else cta_clicks at 4–7% of views (variant null)
 //  - section_view events (~1.5 per view, labels from config sections)
 //  - form_submit ~0.8% of views
+//  - a few deep-reader visits (300–900s, non-bounce, last 2 days)
 //  - demo leads in the leads inbox (~form_submit count, capped 14, real-sounding)
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { guard, HttpError, num, parseStoredConfig, readJsonBody, str } from "@/lib/landing/server"
+import { getAbTests } from "@/lib/landing/ab"
 import { SECTION_META } from "@/lib/landing/types"
-import type { HeroSection } from "@/lib/landing/types"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -137,18 +141,22 @@ export async function POST(req: NextRequest) {
     const project = await db.project.findUnique({ where: { id: projectId } })
     if (!project) throw new HttpError(404, "Project not found")
     const days = Math.max(1, Math.min(90, Math.floor(num(body.days) ?? 30)))
+    const mode = body.mode === "append" ? "append" : "replace"
 
-    // fresh re-seed
-    await db.pageView.deleteMany({ where: { projectId } })
-    await db.event.deleteMany({ where: { projectId } })
-    await db.lead.deleteMany({ where: { projectId } })
+    // fresh re-seed (replace mode only — append keeps the history)
+    if (mode === "replace") {
+      await db.pageView.deleteMany({ where: { projectId } })
+      await db.event.deleteMany({ where: { projectId } })
+      await db.lead.deleteMany({ where: { projectId } })
+    }
 
     const config = parseStoredConfig(project.config)
-    const hero = config.sections.find((s): s is HeroSection => s.type === "hero")
-    const rawAb = hero?.ab
-    const abCfg = rawAb && rawAb.enabled && rawAb.variants.length >= 2 ? rawAb : null
-    const abVariants = abCfg?.variants ?? []
-    const lastVariantName = abVariants.length ? abVariants[abVariants.length - 1].name : null
+    // every enabled section-level test (hero first = primary); each test seeds
+    // its own exposure stream + section-scoped clicks, the primary also tags views
+    const tests = getAbTests(config)
+    const primary = tests[0] ?? null
+    const lastVariantNameOf = (t: { variants: { name: string }[] }) =>
+      t.variants.length ? t.variants[t.variants.length - 1].name : null
 
     const sectionLabels = config.sections
       .filter((s) => !s.hidden && CONTENT_SECTION_TYPES.has(s.type))
@@ -189,19 +197,25 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < views; i++) {
         const t = new Date(dayStart.getTime() + Math.random() * Math.max(1, dayEnd - dayStart.getTime()))
 
-        // A/B: decide the exposure BEFORE the view row so the visit itself is
-        // variant-tagged (per-variant duration/engagement reporting)
+        // A/B: every enabled test draws its own exposure BEFORE the view row;
+        // the primary test's pick also tags the visit (per-variant duration /
+        // engagement reporting)
+        const testPicks = new Map<string, string>() // sectionId → variant
         let variant: string | null = null
-        if (abVariants.length >= 2 && Math.random() < 0.7) {
-          variant = pickWeighted(
-            abVariants.map((v) => [v.name, Math.max(1, v.weight)] as [string, number])
-          )
-          eventRows.push({ projectId, type: "variant_exposure", label: "hero", variant, value: 0, path: "/", createdAt: t })
+        for (const test of tests) {
+          if (test.ab.variants.length >= 2 && Math.random() < 0.7) {
+            const picked = pickWeighted(
+              test.ab.variants.map((v) => [v.name, Math.max(1, v.weight)] as [string, number])
+            )
+            testPicks.set(test.section.id, picked)
+            eventRows.push({ projectId, type: "variant_exposure", label: test.section.id, variant: picked, value: 0, path: "/", createdAt: t })
+            if (test === primary) variant = picked
+          }
         }
 
         // engagement story: bounces are short; engaged visits hold 15s+; the
         // biased (last) variant holds attention longer and bounces less
-        const isWinner = variant !== null && variant === lastVariantName
+        const isWinner = variant !== null && variant === (primary ? lastVariantNameOf(primary.ab) : null)
         const bounceP = variant ? (isWinner ? 0.3 : 0.45) : 0.42
         const isBounce = Math.random() < bounceP
         const duration = isBounce
@@ -235,6 +249,25 @@ export async function POST(req: NextRequest) {
           eventRows.push({ projectId, type: "cta_click", label: "hero", variant: null, value: 0, path: "/", createdAt: clickTime() })
         }
 
+        // per-section test clicks — attributed to the section's own variant
+        for (const test of tests) {
+          if (test === primary) continue // primary clicks handled above (page-wide)
+          const picked = testPicks.get(test.section.id)
+          if (!picked) continue
+          const isTestWinner = picked === lastVariantNameOf(test.ab)
+          if (Math.random() < abClickRate * (isTestWinner ? 1.8 : 1)) {
+            eventRows.push({
+              projectId,
+              type: "cta_click",
+              label: test.section.type,
+              variant: picked,
+              value: 0,
+              path: "/",
+              createdAt: clickTime(),
+            })
+          }
+        }
+
         // section views — ~1.5 per view on random distinct sections
         if (sectionLabels.length) {
           const n = 1 + (Math.random() < 0.5 ? 1 : 0)
@@ -260,6 +293,27 @@ export async function POST(req: NextRequest) {
           })
         }
       }
+    }
+
+    // ── a few deep-reader visits (300–900s, non-bounce, last 2 days) ────────
+    const deepReaders = Math.max(2, Math.min(5, Math.round(totalViews / 300)))
+    for (let i = 0; i < deepReaders; i++) {
+      const t = new Date(now.getTime() - randInt(0, 48) * 3600 * 1000 - randInt(0, 3600) * 1000)
+      if (t.getTime() > now.getTime()) t.setTime(now.getTime() - 60_000)
+      const deepVariant = primary && Math.random() < 0.7 ? pickWeighted(primary.ab.variants.map((v) => [v.name, Math.max(1, v.weight)] as [string, number])) : null
+      viewRows.push({
+        projectId,
+        visitorId: visitors[randInt(0, visitors.length - 1)],
+        path: "/",
+        referrer: pickWeighted(REFERRERS),
+        country: pickWeighted(COUNTRIES),
+        device: pickWeighted(DEVICES),
+        browser: pickWeighted(BROWSERS),
+        variant: deepVariant,
+        duration: randInt(300, 900),
+        isBounce: false,
+        createdAt: t,
+      })
     }
 
     // batched inserts (SQLite createMany, chunks keep it fast)
@@ -296,6 +350,6 @@ export async function POST(req: NextRequest) {
       await db.lead.createMany({ data: leadRows })
     }
 
-    return NextResponse.json({ ok: true, pageviews: viewRows.length, events: eventRows.length, leads: leadRows.length })
+    return NextResponse.json({ ok: true, mode, pageviews: viewRows.length, events: eventRows.length, leads: leadRows.length })
   })
 }

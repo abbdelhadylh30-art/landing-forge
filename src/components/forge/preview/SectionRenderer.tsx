@@ -20,6 +20,7 @@ export interface SectionRendererProps {
   brandName: string
   /** brand logo URL (brand kit) — rendered by navbar & footer when present */
   brandLogo?: string
+  /** Resolved A/B variant copy for THIS section (empty fields already fell back to base copy). */
   abOverride?: { headline: string; sub: string; ctaLabel: string } | null
   onCtaClick?: (section: Section, label: string) => void
   onFormSubmit?: (section: Section, data: Record<string, string>) => void
@@ -27,7 +28,9 @@ export interface SectionRendererProps {
 
 /**
  * Renders a single landing section by its discriminated `type`.
- * Hidden sections render nothing.
+ * Hidden sections render nothing. When an A/B variant is active for this
+ * section, its copy overrides are merged INTO the section object before
+ * dispatch — section components stay variant-agnostic.
  */
 export function SectionRenderer({ section, brandName, brandLogo, abOverride, onCtaClick, onFormSubmit }: SectionRendererProps) {
   if (section.hidden) return null
@@ -46,27 +49,61 @@ export function SectionRenderer({ section, brandName, brandLogo, abOverride, onC
       )
     case "logos":
       return <Logos section={section} />
-    case "features":
-      return <Features section={section} />
+    case "features": {
+      const s = abOverride
+        ? { ...section, ...(abOverride.headline ? { title: abOverride.headline } : {}), ...(abOverride.sub ? { subtitle: abOverride.sub } : {}) }
+        : section
+      return <Features section={s} />
+    }
     case "stats":
       return <Stats section={section} />
-    case "testimonials":
-      return <Testimonials section={section} />
-    case "pricing":
+    case "testimonials": {
+      const s = abOverride
+        ? { ...section, ...(abOverride.headline ? { title: abOverride.headline } : {}), ...(abOverride.sub ? { subtitle: abOverride.sub } : {}) }
+        : section
+      return <Testimonials section={s} />
+    }
+    case "pricing": {
+      const s = abOverride
+        ? { ...section, ...(abOverride.headline ? { title: abOverride.headline } : {}), ...(abOverride.sub ? { subtitle: abOverride.sub } : {}) }
+        : section
       return (
         <Pricing
-          section={section}
+          section={s}
           onCtaClick={(label, planName) => onCtaClick?.(section, `${planName}: ${label}`)}
         />
       )
-    case "faq":
-      return <Faq section={section} />
+    }
+    case "faq": {
+      const s = abOverride
+        ? { ...section, ...(abOverride.headline ? { title: abOverride.headline } : {}), ...(abOverride.sub ? { subtitle: abOverride.sub } : {}) }
+        : section
+      return <Faq section={s} />
+    }
     case "gallery":
       return <Gallery section={section} />
-    case "contact":
-      return <Contact section={section} onFormSubmit={(data) => onFormSubmit?.(section, data)} />
-    case "cta-final":
-      return <CtaFinal section={section} onCtaClick={(label) => onCtaClick?.(section, label)} />
+    case "contact": {
+      const s = abOverride
+        ? {
+            ...section,
+            ...(abOverride.headline ? { title: abOverride.headline } : {}),
+            ...(abOverride.sub ? { subtitle: abOverride.sub } : {}),
+            ...(abOverride.ctaLabel ? { submitLabel: abOverride.ctaLabel } : {}),
+          }
+        : section
+      return <Contact section={s} onFormSubmit={(data) => onFormSubmit?.(section, data)} />
+    }
+    case "cta-final": {
+      const s = abOverride
+        ? {
+            ...section,
+            headline: abOverride.headline,
+            ...(abOverride.sub ? { sub: abOverride.sub } : {}),
+            ...(abOverride.ctaLabel ? { cta: { ...section.cta, label: abOverride.ctaLabel } } : {}),
+          }
+        : section
+      return <CtaFinal section={s} onCtaClick={(label) => onCtaClick?.(section, label)} />
+    }
     case "footer":
       return <Footer section={section} brandName={brandName} logoUrl={brandLogo} onCtaClick={(label) => onCtaClick?.(section, label)} />
     default:

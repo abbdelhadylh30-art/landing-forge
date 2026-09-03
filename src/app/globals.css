@@ -150,6 +150,21 @@
   animation: lf-progress 12s linear forwards;
 }
 
+/* ── Landing Forge dashboard: live ticker item entrance ── */
+@keyframes lf-ticker-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.lf-ticker-in {
+  animation: lf-ticker-in 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* ── Landing Forge studio: custom slim scrollbars ── */
 .lf-scroll {
   scrollbar-width: thin;

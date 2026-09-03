@@ -53,6 +53,7 @@ import { THEMES } from "@/lib/landing/themes"
 import { SECTION_META, SECTION_TYPES } from "@/lib/landing/types"
 import type { DeviceType } from "@/lib/landing/types"
 import { sectionAnchors, publishedAnchorUrl } from "@/lib/landing/anchors"
+import { getAbTests, abTestLabel } from "@/lib/landing/ab"
 import { useSaveProject } from "./useSaveProject"
 
 const DEVICE_META: Record<DeviceType, { label: string; icon: typeof Monitor }> = {
@@ -95,6 +96,8 @@ export function CommandPalette() {
   const setPreviewMode = useForge((s) => s.setPreviewMode)
   const abPreviewVariant = useForge((s) => s.abPreviewVariant)
   const setAbPreviewVariant = useForge((s) => s.setAbPreviewVariant)
+  const abPreviewVariants = useForge((s) => s.abPreviewVariants)
+  const setAbPreviewVariantFor = useForge((s) => s.setAbPreviewVariantFor)
   const canUndo = useForge((s) => s.past.length > 0)
   const canRedo = useForge((s) => s.future.length > 0)
   const undo = useForge((s) => s.undo)
@@ -102,7 +105,8 @@ export function CommandPalette() {
   const { save } = useSaveProject()
 
   const hero = config.sections.find((s) => s.type === "hero")
-  const heroAb = hero?.type === "hero" && hero.ab?.enabled ? hero.ab : null
+  // all enabled section-level tests (hero first)
+  const abTests = React.useMemo(() => getAbTests(config), [config])
 
   // sections that render an anchor → "Copy anchor link" deep-link commands
   const anchorEntries = React.useMemo(() => {
@@ -415,31 +419,56 @@ export function CommandPalette() {
           })}
         </CommandGroup>
 
-        {/* A/B variants */}
-        {heroAb && (
+        {/* A/B variants — one group per active section-level test */}
+        {abTests.length > 0 && (
           <>
             <CommandSeparator className="bg-zinc-800/60" />
             <CommandGroup heading="A/B variant preview">
-              <CommandItem
-                value="ab original control"
-                className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100"
-                onSelect={() => run(() => setAbPreviewVariant(null))}
-              >
-                <BarChart3 className="h-4 w-4 text-zinc-400" /> Original (control)
-                {!abPreviewVariant && <Check className="h-3.5 w-3.5 text-violet-300" />}
-              </CommandItem>
-              {heroAb.variants.map((v) => (
-                <CommandItem
-                  key={v.id}
-                  value={`ab variant ${v.name} ${v.headline}`}
-                  className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100"
-                  onSelect={() => run(() => setAbPreviewVariant(v.name))}
-                >
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-zinc-800 text-[10px] font-bold text-zinc-300">{v.name}</span>
-                  <span className="truncate">{v.headline.slice(0, 48)}</span>
-                  {abPreviewVariant === v.name && <Check className="h-3.5 w-3.5 text-violet-300" />}
-                </CommandItem>
-              ))}
+              {abTests.flatMap(({ section, ab }) => {
+                const testLabel = abTestLabel(config, section)
+                const active = section.type === "hero" ? abPreviewVariants[section.id] ?? abPreviewVariant : abPreviewVariants[section.id]
+                const items = [
+                  <CommandItem
+                    key={`${section.id}-control`}
+                    value={`ab ${testLabel} original control`}
+                    className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100"
+                    onSelect={() =>
+                      run(() => {
+                        setAbPreviewVariantFor(section.id, null)
+                        if (section.type === "hero") setAbPreviewVariant(null)
+                      })
+                    }
+                  >
+                    <BarChart3 className="h-4 w-4 text-zinc-400" />
+                    <span className="truncate">
+                      {abTests.length > 1 ? <span className="text-violet-300">{testLabel} · </span> : null}
+                      Original (control)
+                    </span>
+                    {!active && <Check className="h-3.5 w-3.5 text-violet-300" />}
+                  </CommandItem>,
+                  ...ab.variants.map((v) => (
+                    <CommandItem
+                      key={`${section.id}-${v.id}`}
+                      value={`ab ${testLabel} variant ${v.name} ${v.headline}`}
+                      className="text-[13px] text-zinc-200 data-[selected=true]:bg-violet-500/20 data-[selected=true]:text-violet-100"
+                      onSelect={() =>
+                        run(() => {
+                          setAbPreviewVariantFor(section.id, v.name)
+                          if (section.type === "hero") setAbPreviewVariant(v.name)
+                        })
+                      }
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center rounded bg-zinc-800 text-[10px] font-bold text-zinc-300">{v.name}</span>
+                      <span className="truncate">
+                        {abTests.length > 1 ? <span className="text-violet-300">{testLabel} · </span> : null}
+                        {v.headline.slice(0, 48)}
+                      </span>
+                      {active === v.name && <Check className="h-3.5 w-3.5 text-violet-300" />}
+                    </CommandItem>
+                  )),
+                ]
+                return items
+              })}
             </CommandGroup>
           </>
         )}

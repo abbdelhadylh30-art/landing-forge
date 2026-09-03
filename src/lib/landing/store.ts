@@ -21,7 +21,8 @@ interface ForgeState {
   // studio ui state
   selectedSectionId: string | null
   device: DeviceType
-  abPreviewVariant: string | null // which A/B variant is force-shown in preview
+  abPreviewVariant: string | null // hero/primary test variant force-shown in preview (legacy single-test switcher)
+  abPreviewVariants: Record<string, string> // sectionId → variant name force-shown in preview (section-level tests)
   previewMode: boolean // full-screen preview (no editing chrome)
   lastTrackedView: number
 
@@ -47,6 +48,7 @@ interface ForgeState {
   selectSection: (id: string | null) => void
   setDevice: (d: DeviceType) => void
   setAbPreviewVariant: (v: string | null) => void
+  setAbPreviewVariantFor: (sectionId: string, v: string | null) => void
   setPreviewMode: (v: boolean) => void
   markViewTracked: () => void
 
@@ -87,6 +89,7 @@ export const useForge = create<ForgeState>((set, get) => ({
   selectedSectionId: null,
   device: "desktop",
   abPreviewVariant: null,
+  abPreviewVariants: {},
   previewMode: false,
   lastTrackedView: 0,
 
@@ -102,6 +105,7 @@ export const useForge = create<ForgeState>((set, get) => ({
       future: [],
       selectedSectionId: config.sections[0]?.id ?? null,
       abPreviewVariant: null,
+      abPreviewVariants: {},
     }),
 
   setProjectMeta: (name, slug) =>
@@ -155,8 +159,9 @@ export const useForge = create<ForgeState>((set, get) => ({
       if (idx === -1) return {}
       const copy = clone(next.sections[idx])
       copy.id = `${copy.id}-copy-${Math.random().toString(36).slice(2, 6)}`
-      if (copy.type === "hero" && copy.ab?.variants) {
-        copy.ab = { ...copy.ab, enabled: false }
+      const copyAb = (copy as { ab?: { enabled: boolean; variants: unknown[] } }).ab
+      if (copyAb?.variants) {
+        ;(copy as { ab?: { enabled: boolean } }).ab = { ...copyAb, enabled: false } // duplicates never double-run a test
       }
       next.sections.splice(idx + 1, 0, copy)
       return { ...pushHistory(s), config: next, dirty: true, selectedSectionId: copy.id }
@@ -183,6 +188,13 @@ export const useForge = create<ForgeState>((set, get) => ({
   selectSection: (id) => set({ selectedSectionId: id }),
   setDevice: (d) => set({ device: d }),
   setAbPreviewVariant: (v) => set({ abPreviewVariant: v }),
+  setAbPreviewVariantFor: (sectionId, v) =>
+    set((s) => {
+      const next = { ...s.abPreviewVariants }
+      if (v === null) delete next[sectionId]
+      else next[sectionId] = v
+      return { abPreviewVariants: next }
+    }),
   setPreviewMode: (v) => set({ previewMode: v }),
   markViewTracked: () => set({ lastTrackedView: Date.now() }),
 
@@ -214,7 +226,6 @@ export const useForge = create<ForgeState>((set, get) => ({
       const prev = past.pop() as LandingConfig
       return { config: prev, past, future: [clone(s.config), ...s.future].slice(0, MAX_HISTORY), dirty: true }
     }),
-
   redo: () =>
     set((s) => {
       if (!s.future.length) return {}
@@ -227,20 +238,3 @@ export const useForge = create<ForgeState>((set, get) => ({
       }
     }),
 }))
-
-/** Get the effective hero content when an A/B variant is force-selected in preview */
-export function abResolvedHero(hero: {
-  headline: string
-  sub: string
-  cta: { label: string; href: string }
-  ab?: { enabled: boolean; variants: { name: string; headline: string; sub?: string; ctaLabel?: string; weight: number }[] }
-}, variantName: string | null) {
-  if (!hero.ab?.enabled || !variantName) return { headline: hero.headline, sub: hero.sub, ctaLabel: hero.cta.label }
-  const v = hero.ab.variants.find((x) => x.name === variantName)
-  if (!v) return { headline: hero.headline, sub: hero.sub, ctaLabel: hero.cta.label }
-  return {
-    headline: v.headline || hero.headline,
-    sub: v.sub || hero.sub,
-    ctaLabel: v.ctaLabel || hero.cta.label,
-  }
-}

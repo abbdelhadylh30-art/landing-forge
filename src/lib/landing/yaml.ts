@@ -26,6 +26,10 @@ export function normalizeConfig(input: unknown): LandingConfig {
     // merge AI/partial fields over defaults (shallow — nested arrays replaced if present & valid)
     const merged: Record<string, unknown> = { ...fresh, ...stripUndefined(rs) }
     merged.id = typeof rs.id === "string" && rs.id ? rs.id : sid(type)
+    // A/B config survives round-trips but must be well-formed (any AB-capable section)
+    const abOk = validAb(rs.ab)
+    if (abOk) merged.ab = abOk
+    else delete merged.ab
     // per-type guards
     if (type === "hero") {
       const layout = rs.layout
@@ -167,6 +171,43 @@ function validCta(c: unknown): { label: string; href: string } | null {
   const o = c as Record<string, unknown>
   if (typeof o.label !== "string") return null
   return { label: o.label, href: String(o.href ?? "#") }
+}
+
+/** Coerce a partial/AI `ab` block into a well-formed AbConfig (or null to drop it). */
+function validAb(ab: unknown): {
+  enabled: boolean
+  metric: string
+  autoWinner: boolean
+  sampleSize: number
+  variants: { id: string; name: string; headline: string; sub?: string; ctaLabel?: string; weight: number }[]
+} | null {
+  if (!ab || typeof ab !== "object") return null
+  const o = ab as Record<string, unknown>
+  const variants = Array.isArray(o.variants)
+    ? o.variants
+        .map((v) => {
+          const w = v as Record<string, unknown>
+          if (typeof w.name !== "string" || typeof w.headline !== "string") return null
+          return {
+            id: typeof w.id === "string" && w.id ? w.id : `v${Math.random().toString(36).slice(2, 6)}`,
+            name: w.name.slice(0, 2),
+            headline: w.headline,
+            ...(typeof w.sub === "string" ? { sub: w.sub } : {}),
+            ...(typeof w.ctaLabel === "string" ? { ctaLabel: w.ctaLabel } : {}),
+            weight: Math.max(0, Math.min(100, Number(w.weight) || 0)),
+          }
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null)
+        .slice(0, 4)
+    : []
+  if (variants.length < 2) return null
+  return {
+    enabled: Boolean(o.enabled),
+    metric: typeof o.metric === "string" && o.metric ? o.metric : "cta_click",
+    autoWinner: o.autoWinner === undefined ? true : Boolean(o.autoWinner),
+    sampleSize: Math.max(50, Math.floor(Number(o.sampleSize) || 500)),
+    variants,
+  }
 }
 
 function validItems<T>(arr: unknown, min: number, map: (x: unknown) => T): T[] {

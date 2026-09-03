@@ -33,6 +33,8 @@ import type {
   CtaFinalSection,
 } from "@/lib/landing/types"
 import { ImageLibraryDialog } from "./ImageLibraryDialog"
+import { AB_VARIANT_B_SUGGESTIONS } from "@/lib/landing/ab"
+import type { AbConfig } from "@/lib/landing/types"
 
 // ─── Field primitives ────────────────────────────────────────────────────────
 
@@ -486,6 +488,124 @@ function StringListEditor({ label, items, onChange, createValue, addLabel, max =
 
 // ─── Per-section editors ─────────────────────────────────────────────────────
 
+/**
+ * Reusable section-level A/B test editor — variants override the section's
+ * headline/title, sub/subtitle and (where the section has one CTA) its label.
+ * Used by the hero, pricing, features, testimonials, FAQ, contact and final-CTA editors.
+ */
+function AbTestFields({
+  ab,
+  setAb,
+  sectionTypeName,
+  base,
+  labels,
+}: {
+  ab?: AbConfig
+  setAb: (ab: AbConfig) => void
+  /** human name used in the header, e.g. "hero" / "pricing section" */
+  sectionTypeName: string
+  /** base copy the variants fall back to (A starts from here) */
+  base: { headline: string; sub: string; ctaLabel: string }
+  /** per-section field labels; ctaLabel undefined ⇒ section has no single CTA to override */
+  labels: { headline: string; sub: string; ctaLabel?: string }
+}) {
+  const totalWeight = ab?.variants.reduce((s, v) => s + v.weight, 0) ?? 0
+  const bSuggestion = AB_VARIANT_B_SUGGESTIONS[sectionTypeName] ?? "An alternative worth testing"
+  const makeVariants = (): AbConfig["variants"] => [
+    { id: "va", name: "A", headline: base.headline, sub: "", ctaLabel: "", weight: 50 },
+    { id: "vb", name: "B", headline: bSuggestion, sub: "", ctaLabel: "", weight: 50 },
+  ]
+  return (
+    <div className="space-y-3 rounded-lg border border-violet-500/25 bg-violet-500/5 p-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[12px] font-semibold text-violet-200">🧪 A/B test this {sectionTypeName}</p>
+          <p className="text-[10px] text-zinc-500">Weighted variants with auto-winner</p>
+        </div>
+        <Switch
+          checked={ab?.enabled ?? false}
+          aria-label={`A/B test this ${sectionTypeName}`}
+          onCheckedChange={(enabled) =>
+            setAb({
+              ...(ab ?? { metric: "cta_click", autoWinner: true, sampleSize: 500, variants: [] }),
+              enabled,
+              variants: (ab?.variants ?? []).length >= 2 ? ab!.variants : makeVariants(),
+            })
+          }
+          className="data-[state=checked]:bg-violet-500"
+        />
+      </div>
+      {ab?.enabled && (
+        <>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Sample size</Label>
+              <Input
+                type="number"
+                min={50}
+                step={50}
+                value={ab.sampleSize}
+                onChange={(e) => setAb({ ...ab, sampleSize: Math.max(50, Number(e.target.value) || 500) })}
+                className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100"
+              />
+            </div>
+            <div className="flex-1">
+              <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Metric</Label>
+              <div className="flex h-8 items-center rounded-md border border-zinc-700/80 bg-zinc-900/60 px-2 font-mono text-[11px] text-violet-300">{ab.metric}</div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-[10px]">
+            <span className={cn("font-medium", totalWeight === 100 ? "text-emerald-300" : "text-amber-300")}>
+              Total weight: {totalWeight}% {totalWeight !== 100 && "(should be 100)"}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1.5 text-[10px] text-violet-300 hover:bg-violet-500/10"
+              onClick={() => {
+                const w = Math.floor(100 / ab.variants.length)
+                setAb({ ...ab, variants: ab.variants.map((v, i) => ({ ...v, weight: i === ab.variants.length - 1 ? 100 - w * (ab.variants.length - 1) : w })) })
+              }}
+            >
+              Distribute evenly
+            </Button>
+          </div>
+          <ListEditor
+            items={ab.variants}
+            onChange={(variants) => setAb({ ...ab, variants })}
+            createItem={() => ({
+              id: `v${Math.random().toString(36).slice(2, 6)}`,
+              name: String.fromCharCode(65 + ab.variants.length),
+              headline: `New variant ${labels.headline.toLowerCase()}`,
+              sub: "",
+              ctaLabel: "",
+              weight: 0,
+            })}
+            itemTitle={(v) => `Variant ${v.name} · ${v.weight}%`}
+            addLabel="Add variant"
+            max={4}
+            renderFields={(v, u) => (
+              <div className="space-y-2">
+                <div className="grid grid-cols-[70px_1fr_70px] gap-2">
+                  <Input value={v.name} onChange={(e) => u({ name: e.target.value.slice(0, 2) })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />
+                  <Input type="number" value={v.weight} min={0} max={100} onChange={(e) => u({ weight: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />
+                  <div className="flex h-8 items-center text-[10px] text-zinc-500">weight %</div>
+                </div>
+                <Input value={v.headline} onChange={(e) => u({ headline: e.target.value })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" placeholder={labels.headline} />
+                <Input value={v.sub ?? ""} onChange={(e) => u({ sub: e.target.value })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" placeholder={`${labels.sub} override (optional)`} />
+                {labels.ctaLabel && (
+                  <Input value={v.ctaLabel ?? ""} onChange={(e) => u({ ctaLabel: e.target.value })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" placeholder={`${labels.ctaLabel} override (optional)`} />
+                )}
+              </div>
+            )}
+          />
+          <SwitchField label="Auto-promote winner" checked={ab.autoWinner} onChange={(autoWinner) => setAb({ ...ab, autoWinner })} hint="Auto-promote the winning variant when sample size is reached" />
+        </>
+      )}
+    </div>
+  )
+}
+
 type EditorProps<S extends Section> = { section: S; update: (patch: Partial<S>) => void }
 
 function NavbarEditor({ section, update }: EditorProps<NavbarSection>) {
@@ -520,8 +640,6 @@ function NavbarEditor({ section, update }: EditorProps<NavbarSection>) {
 function HeroEditor({ section, update }: EditorProps<HeroSection>) {
   const brand = useForge((s) => s.config.brand)
   const hasSecondary = Boolean(section.secondaryCta?.label)
-  const ab = section.ab
-  const totalWeight = ab?.variants.reduce((s, v) => s + v.weight, 0) ?? 0
   return (
     <div className="space-y-4">
       <SelectField
@@ -570,98 +688,13 @@ function HeroEditor({ section, update }: EditorProps<HeroSection>) {
       />
 
       {/* A/B testing */}
-      <div className="space-y-3 rounded-lg border border-violet-500/25 bg-violet-500/5 p-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[12px] font-semibold text-violet-200">🧪 A/B test this hero</p>
-            <p className="text-[10px] text-zinc-500">Weighted variants with auto-winner</p>
-          </div>
-          <Switch
-            checked={ab?.enabled ?? false}
-            onCheckedChange={(enabled) =>
-              update({
-                ab: {
-                  ...(ab ?? { metric: "cta_click", autoWinner: true, sampleSize: 500, variants: [] }),
-                  enabled,
-                  variants:
-                    (ab?.variants ?? []).length >= 2
-                      ? ab!.variants
-                      : [
-                          { id: "va", name: "A", headline: section.headline, sub: "", ctaLabel: "", weight: 50 },
-                          { id: "vb", name: "B", headline: "Deploy your product in 30 seconds", sub: "", ctaLabel: "", weight: 50 },
-                        ],
-                },
-              })
-            }
-            className="data-[state=checked]:bg-violet-500"
-          />
-        </div>
-        {ab?.enabled && (
-          <>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Sample size</Label>
-                <Input
-                  type="number"
-                  min={50}
-                  step={50}
-                  value={ab.sampleSize}
-                  onChange={(e) => update({ ab: { ...ab, sampleSize: Math.max(50, Number(e.target.value) || 500) } })}
-                  className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100"
-                />
-              </div>
-              <div className="flex-1">
-                <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Metric</Label>
-                <div className="flex h-8 items-center rounded-md border border-zinc-700/80 bg-zinc-900/60 px-2 font-mono text-[11px] text-violet-300">{ab.metric}</div>
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-[10px]">
-              <span className={cn("font-medium", totalWeight === 100 ? "text-emerald-300" : "text-amber-300")}>
-                Total weight: {totalWeight}% {totalWeight !== 100 && "(should be 100)"}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-5 px-1.5 text-[10px] text-violet-300 hover:bg-violet-500/10"
-                onClick={() => {
-                  const w = Math.floor(100 / ab.variants.length)
-                  update({ ab: { ...ab, variants: ab.variants.map((v, i) => ({ ...v, weight: i === ab.variants.length - 1 ? 100 - w * (ab.variants.length - 1) : w })) } })
-                }}
-              >
-                Distribute evenly
-              </Button>
-            </div>
-            <ListEditor
-              items={ab.variants}
-              onChange={(variants) => update({ ab: { ...ab, variants } })}
-              createItem={() => ({
-                id: `v${Math.random().toString(36).slice(2, 6)}`,
-                name: String.fromCharCode(65 + ab.variants.length),
-                headline: "New variant headline",
-                sub: "",
-                ctaLabel: "",
-                weight: 0,
-              })}
-              itemTitle={(v) => `Variant ${v.name} · ${v.weight}%`}
-              addLabel="Add variant"
-              max={4}
-              renderFields={(v, u) => (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-[70px_1fr_70px] gap-2">
-                    <Input value={v.name} onChange={(e) => u({ name: e.target.value.slice(0, 2) })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />
-                    <Input type="number" value={v.weight} min={0} max={100} onChange={(e) => u({ weight: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />
-                    <div className="flex h-8 items-center text-[10px] text-zinc-500">weight %</div>
-                  </div>
-                  <Input value={v.headline} onChange={(e) => u({ headline: e.target.value })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" placeholder="Headline" />
-                  <Input value={v.sub ?? ""} onChange={(e) => u({ sub: e.target.value })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" placeholder="Sub override (optional)" />
-                  <Input value={v.ctaLabel ?? ""} onChange={(e) => u({ ctaLabel: e.target.value })} className="h-8 border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" placeholder="CTA label override (optional)" />
-                </div>
-              )}
-            />
-            <SwitchField label="Auto-promote winner" checked={ab.autoWinner} onChange={(autoWinner) => update({ ab: { ...ab, autoWinner } })} hint="Auto-promote the winning variant when sample size is reached" />
-          </>
-        )}
-      </div>
+      <AbTestFields
+        ab={section.ab}
+        setAb={(ab) => update({ ab })}
+        sectionTypeName="hero"
+        base={{ headline: section.headline, sub: section.sub, ctaLabel: section.cta.label }}
+        labels={{ headline: "Headline", sub: "Sub copy", ctaLabel: "CTA label" }}
+      />
     </div>
   )
 }
@@ -727,6 +760,13 @@ function FeaturesEditor({ section, update }: EditorProps<FeaturesSection>) {
             <Textarea value={f.body} rows={2} onChange={(e) => u({ body: e.target.value })} className="resize-none border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />
           </div>
         )}
+      />
+      <AbTestFields
+        ab={section.ab}
+        setAb={(ab) => update({ ab })}
+        sectionTypeName="features"
+        base={{ headline: section.title ?? "", sub: section.subtitle ?? "", ctaLabel: "" }}
+        labels={{ headline: "Title", sub: "Subtitle" }}
       />
     </div>
   )
@@ -806,6 +846,13 @@ function TestimonialsEditor({ section, update }: EditorProps<TestimonialsSection
           </div>
         )}
       />
+      <AbTestFields
+        ab={section.ab}
+        setAb={(ab) => update({ ab })}
+        sectionTypeName="testimonials"
+        base={{ headline: section.title ?? "", sub: section.subtitle ?? "", ctaLabel: "" }}
+        labels={{ headline: "Title", sub: "Subtitle" }}
+      />
     </div>
   )
 }
@@ -850,6 +897,13 @@ function PricingEditor({ section, update }: EditorProps<PricingSection>) {
           </div>
         )}
       />
+      <AbTestFields
+        ab={section.ab}
+        setAb={(ab) => update({ ab })}
+        sectionTypeName="pricing"
+        base={{ headline: section.title ?? "", sub: section.subtitle ?? "", ctaLabel: "" }}
+        labels={{ headline: "Title", sub: "Subtitle" }}
+      />
     </div>
   )
 }
@@ -881,6 +935,13 @@ function FaqEditor({ section, update }: EditorProps<FaqSection>) {
             <Textarea value={f.a} rows={3} onChange={(e) => u({ a: e.target.value })} className="resize-none border-zinc-700/80 bg-zinc-900/60 text-[13px] text-zinc-100" />
           </div>
         )}
+      />
+      <AbTestFields
+        ab={section.ab}
+        setAb={(ab) => update({ ab })}
+        sectionTypeName="faq"
+        base={{ headline: section.title ?? "", sub: section.subtitle ?? "", ctaLabel: "" }}
+        labels={{ headline: "Title", sub: "Subtitle" }}
       />
     </div>
   )
@@ -960,6 +1021,13 @@ function ContactEditor({ section, update }: EditorProps<ContactSection>) {
         placeholder="Field label"
       />
       <TextField label="Submit label" value={section.submitLabel} onChange={(v) => update({ submitLabel: v })} />
+      <AbTestFields
+        ab={section.ab}
+        setAb={(ab) => update({ ab })}
+        sectionTypeName="contact"
+        base={{ headline: section.title ?? "", sub: section.subtitle ?? "", ctaLabel: section.submitLabel }}
+        labels={{ headline: "Title", sub: "Subtitle", ctaLabel: "Submit label" }}
+      />
     </div>
   )
 }
@@ -971,6 +1039,13 @@ function CtaFinalEditor({ section, update }: EditorProps<CtaFinalSection>) {
       <TextAreaField label="Sub copy" value={section.sub ?? ""} onChange={(v) => update({ sub: v })} rows={2} maxLength={140} />
       <CtaFields cta={section.cta} onChange={(cta) => update({ cta })} />
       <TextField label="Note" value={section.note ?? ""} onChange={(v) => update({ note: v })} placeholder="No credit card required" />
+      <AbTestFields
+        ab={section.ab}
+        setAb={(ab) => update({ ab })}
+        sectionTypeName="cta-final"
+        base={{ headline: section.headline, sub: section.sub ?? "", ctaLabel: section.cta.label }}
+        labels={{ headline: "Headline", sub: "Sub copy", ctaLabel: "CTA label" }}
+      />
     </div>
   )
 }
