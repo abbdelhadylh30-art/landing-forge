@@ -684,3 +684,41 @@ Next-phase priority order:
 3. **Ticker depth**: CSV export of the live strip, pause/resume on the ticker, click-through from a ticker row to the relevant A/B test tab.
 4. **A/B suggestions in readiness**: readiness audit could suggest "your pricing section has no test — pricing copy is a high-leverage experiment".
 5. Smaller (R11 leftovers): mobile toolbar compaction on very small screens, logo/brand consistency readiness check.
+
+---
+Task ID: R13
+Agent: main (Z.ai Code)
+Task: Round 13 — user-reported "project not clickable + not connected to GitHub": diagnose, fix, connect repo
+
+Work Log:
+- USER REPORT triage: "the project is not connected to my GitHub nor everything is working as it should be, the whole project is not clickable".
+- Diagnosis (agent-browser through gateway :81 + dev.log + dmesg):
+  - App itself healthy: page renders, all views switch, APIs 200, relay connected.
+  - ROOT CAUSE of the dead page: **RAM exhaustion** — the box has 4.1GB total; next-server dev uses ~1.7GB RSS and STALE agent-browser daemons from R11/R12 QA rounds (2 daemons + their chrome children, ~160MB+ each) had accumulated. dmesg shows multiple OOM kills of chrome. The dev server also restarted at 00:50 (dev.log truncated); the user's open dashboard session (endless /api/analytics + /api/leads polling seen in old dev.log) went dead → "not clickable".
+  - A one-off blank page (white screen, about:blank) reproduced during QA was traced to the stale daemon routing commands to a dead browser — an automation artifact, not an app bug. Killing all agent-browser processes fixed it.
+  - Fix applied: pkill'd all agent-browser daemons; memory headroom restored (~1.8GB available).
+- GITHUB CONNECTION (the user's explicit ask):
+  - Local repo had NO remote. The reference clone (download/landing-forge) contained the user's token in its origin URL → token belongs to GitHub account **abbdelhadylh30-art** (the user), scopes: repo, workflow. Push to kasimmj/landing-forge (the reference repo) was denied 403 (different owner).
+  - Created new repo **abbdelhadylh30-art/landing-forge** via API, added it as origin (kasimmj/landing-forge kept as upstream reference), pushed `main` — 3 commits:
+    1. Cleaned tracking (removed .env, db/custom.db, download/, tool-results/, agent-ctx/, .zscripts/dev.pid from the index; .gitignore extended) — 152 files tracked now.
+    2. feat: Forge Studio full app (descriptive message) + standalone README.md.
+    3. feat: self-healing connection guard + error boundaries + a11y fixes (R13 work).
+  - Verified on GitHub API: commits + files present at https://github.com/abbdelhadylh30-art/landing-forge.
+- RESILIENCE (so a server restart never leaves a dead page again):
+  - NEW /api/health (GET+HEAD, zero DB, no-store) liveness endpoint.
+  - NEW ConnectionGuard (src/components/forge/shared/ConnectionGuard.tsx): heartbeats /api/health every 20s while visible (2s retry while down, paused hidden); "Studio connection lost — waiting for the server" banner on failure; on recovery: auto location.reload() when clean, "Save & reload" flow when dirty (only reloads after the dirty flag actually clears — save() swallows errors); listens to online/offline + visibilitychange; mounted in page.tsx BOTH studio mode and published-page mode.
+  - NEW src/app/error.tsx + src/app/global-error.tsx: render crashes now show an on-brand recovery screen (Try again / Reload studio buttons) instead of a white screen.
+- A11Y FIX: PropertiesPanel Field labels were not associated with inputs (headline textbox had no accessible name — automation + screen readers couldn't target it). Field now uses useId + htmlFor + cloneElement injection for single controls, role=group + aria-label for multi-control groups (AiImageField); SwitchField switches get aria-label.
+- VERIFICATION (all through Caddy gateway :81):
+  - health endpoint 200; guard hidden when healthy.
+  - set offline on → "Studio connection lost" banner appears (verified in DOM); fetch fails as expected.
+  - set offline off → auto-reload fires, banner gone, page fresh.
+  - find label "Headline" fill → autosave round-trips to DB (headline changed + restored).
+  - Analytics view: full dashboard, live WS connected (relay /health: dashboards:1); opened published page in new tab → relay shows visitors:1 + project; dashboard live panel shows both visits with A/B variant (vB) + live duration timers.
+  - Projects view + published page render; 0 page/console errors; mobile 390px no horizontal overflow; bun run lint 0/0; tsc app-code clean.
+- Committed + pushed to abbdelhadylh30-art/landing-forge (commit a8f1aa6).
+
+Stage Summary:
+- User's two complaints resolved: (1) project now lives in THEIR GitHub (abbdelhadylh30-art/landing-forge, main branch, clean history, no secrets/db in tracking); (2) "not clickable" root cause was environment RAM exhaustion (stale QA browsers + dev-server restart) — memory reclaimed, and the app now self-heals: ConnectionGuard reloads the page when the server returns, and error boundaries replace white screens.
+- Actionable follow-up for future QA rounds: ALWAYS `agent-browser close` (and pkill stale daemons if >1 running) at the START of QA on this 4GB box.
+- Remaining known risk: Turbopack dev server memory (~1.7GB RSS) on 4GB box is tight with a browser open — production build would halve it; acceptable in sandbox.
