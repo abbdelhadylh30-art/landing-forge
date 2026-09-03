@@ -19,6 +19,7 @@ import { ReadinessDialog } from "@/components/forge/studio/ReadinessPanel"
 import { AiGenerateDialog, AiImproveDialog, ExportYamlDialog, ImportYamlDialog, ExportHtmlDialog } from "@/components/forge/studio/Dialogs"
 import { DeployDialog } from "@/components/forge/studio/DeployDialog"
 import { ImageLibraryDialog } from "@/components/forge/studio/ImageLibraryDialog"
+import { ConnectionGuard } from "@/components/forge/shared/ConnectionGuard"
 import { toast } from "sonner"
 import type { ProjectSummary, ProjectWithConfig } from "@/lib/landing/types"
 
@@ -136,7 +137,13 @@ export default function Home() {
   }, [dirty])
 
   // ── Published page mode: render the visitor view, nothing else ────────────
-  if (typeof publishedSlug === "string") return <PublishedPage slug={publishedSlug} />
+  if (typeof publishedSlug === "string")
+    return (
+      <>
+        <PublishedPage slug={publishedSlug} />
+        <ConnectionGuard />
+      </>
+    )
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-zinc-950 text-zinc-100">
@@ -231,6 +238,9 @@ export default function Home() {
       <ReadinessDialog />
       <ShortcutsDialog />
       <CommandPalette />
+
+      {/* self-healing connection banner (dev-server restarts, network blips) */}
+      <ConnectionGuard />
 
       {/* subtle grid backdrop */}
       <div

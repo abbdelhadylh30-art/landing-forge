@@ -205,10 +205,23 @@ function AiImageField({
 }
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  // unique id links the visible <Label> to its control (a11y: accessible names
+  // for every studio input — screen readers + getByLabel automation).
+  // single control → label htmlFor; control group → role=group + aria-label.
+  const id = React.useId()
+  const isSingle = React.isValidElement(children) && React.Children.count(children) === 1
   return (
     <div className="space-y-1.5">
-      <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</Label>
-      {children}
+      <Label htmlFor={isSingle ? id : undefined} className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+        {label}
+      </Label>
+      {isSingle ? (
+        React.cloneElement(children as React.ReactElement<Record<string, unknown>>, { id })
+      ) : (
+        <div id={id} role="group" aria-label={label}>
+          {children}
+        </div>
+      )}
       {hint && <p className="text-[10px] leading-tight text-zinc-500">{hint}</p>}
     </div>
   )
@@ -320,7 +333,7 @@ function SwitchField({
         <p className="text-[12px] font-medium text-zinc-200">{label}</p>
         {hint && <p className="text-[10px] text-zinc-500">{hint}</p>}
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} className="data-[state=checked]:bg-violet-500" />
+      <Switch checked={checked} onCheckedChange={onChange} aria-label={label} className="data-[state=checked]:bg-violet-500" />
     </div>
   )
 }
