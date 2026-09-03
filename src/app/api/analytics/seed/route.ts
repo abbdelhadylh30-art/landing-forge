@@ -159,9 +159,11 @@ export async function POST(req: NextRequest) {
     const lastVariantNameOf = (t: { variants: { name: string }[] }) =>
       t.variants.length ? t.variants[t.variants.length - 1].name : null
 
-    const sectionLabels = config.sections
+    // readable sections for section_view events — id kept so reads can be
+    // tagged with the visit's own test assignment (per-variant read counts)
+    const readSections = config.sections
       .filter((s) => !s.hidden && CONTENT_SECTION_TYPES.has(s.type))
-      .map((s) => SECTION_META[s.type].label)
+      .map((s) => ({ id: s.id, label: SECTION_META[s.type].label }))
     const hasContact = config.sections.some((s) => s.type === "contact")
 
     const now = new Date()
@@ -270,14 +272,15 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // section views — ~1.5 per view on random distinct sections
-        if (sectionLabels.length) {
+        // section views — ~1.5 per view on random distinct sections; a section
+        // under an enabled test gets its read tagged with that test's pick
+        if (readSections.length) {
           const n = 1 + (Math.random() < 0.5 ? 1 : 0)
-          const remaining = [...sectionLabels]
+          const remaining = [...readSections]
           for (let s = 0; s < n && remaining.length; s++) {
-            const label = remaining.splice(randInt(0, remaining.length - 1), 1)[0]
+            const sec = remaining.splice(randInt(0, remaining.length - 1), 1)[0]
             const ct = new Date(Math.min(now.getTime(), t.getTime() + randInt(20, 240) * 1000))
-            eventRows.push({ projectId, type: "section_view", label, variant: null, value: 0, path: "/", createdAt: ct })
+            eventRows.push({ projectId, type: "section_view", label: sec.label, variant: testPicks.get(sec.id) ?? null, value: 0, path: "/", createdAt: ct })
           }
         }
 

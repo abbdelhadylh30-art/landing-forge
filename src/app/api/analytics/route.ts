@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { guard, HttpError, parseStoredConfig } from "@/lib/landing/server"
 import { getAbTests, exposureLabels, abTestLabel } from "@/lib/landing/ab"
+import { SECTION_META } from "@/lib/landing/types"
 import type { AbTestResult, AnalyticsPayload, LiveVisit } from "@/lib/landing/types"
 
 export const runtime = "nodejs"
@@ -194,6 +195,11 @@ export async function GET(req: NextRequest) {
       const labels = exposureLabels(section)
       const exposuresBy = new Map<string, number>()
       const clicksBy = new Map<string, number>()
+      // variant-tagged section reads: section_view events whose label is this
+      // section's display label (the published observer + seeder convention).
+      // The hero gets no reads — the pageview itself IS the hero read.
+      const sectionLabel = SECTION_META[section.type]?.label
+      const readsBy = new Map<string, number>()
       for (const e of events) {
         if (!e.variant) continue
         if (e.type === "variant_exposure") {
@@ -201,6 +207,8 @@ export async function GET(req: NextRequest) {
         } else if (e.type === "cta_click") {
           const labelMatch = primary || e.label === section.type || e.label.startsWith(`${section.type}:`)
           if (labelMatch) clicksBy.set(e.variant, (clicksBy.get(e.variant) ?? 0) + 1)
+        } else if (e.type === "section_view" && sectionLabel && e.label === sectionLabel) {
+          readsBy.set(e.variant, (readsBy.get(e.variant) ?? 0) + 1)
         }
       }
       const variants = ab.variants.map((v) => {
@@ -216,6 +224,7 @@ export async function GET(req: NextRequest) {
           ctr: exposures > 0 ? clicks / exposures : 0,
           avgDuration: pv && pv.total > 0 ? Math.round(pv.duration / pv.total) : 0,
           engagedPct: pv && pv.total > 0 ? pv.engaged / pv.total : 0,
+          sectionReads: readsBy.get(v.name) ?? 0,
         }
       })
       const totalExposures = variants.reduce((s, v) => s + v.exposures, 0)

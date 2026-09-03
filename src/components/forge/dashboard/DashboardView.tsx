@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { BarChart3, Crown, Download, Globe2, Layers, Loader2, Mail, Monitor, MonitorSmartphone, MousePointerClick, Pause, Play, Radio, RefreshCw, Smartphone, Sparkles, Tablet, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
+import { BarChart3, Crown, Download, Eye, Globe2, Layers, Loader2, Mail, Monitor, MonitorSmartphone, MousePointerClick, Pause, Play, Radio, RefreshCw, Smartphone, Sparkles, Tablet, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -23,6 +23,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
 import { applyVariantPatch } from "@/lib/landing/ab"
+import { SECTION_META } from "@/lib/landing/types"
 import type { AbTestResult, AbVariantResult, AnalyticsPayload, LeadRecord, LiveVisit } from "@/lib/landing/types"
 import { LeadDetailSheet, downloadLeadsCsv } from "./LeadDetailSheet"
 import { useDashboardRelay, mergeLiveVisits, type RelayEvent } from "@/components/forge/shared/livesocket"
@@ -425,6 +426,25 @@ function AbVariantRow({ v, isWinner, showEngagement, isEngLeader }: { v: AbVaria
           CTR {(v.ctr * 100).toFixed(1)}% · {v.clicks}/{v.exposures}
         </span>
       </div>
+      {/* Section reads row — variant-tagged section_view events (per-variant
+          read counts + reach); hidden for the hero (the pageview is its read) */}
+      {v.sectionReads > 0 && (
+        <div
+          className="mt-1.5 flex items-center gap-2"
+          title={`Variant-tagged reads: ${fmtNum(v.sectionReads)}${v.exposures > 0 ? ` · ${Math.round((v.sectionReads / v.exposures) * 100)}% of exposed visitors actually read this section` : ""}`}
+        >
+          <Eye className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-300"
+              style={{ width: `${v.exposures > 0 ? Math.round((v.sectionReads / v.exposures) * 100) : 0}%` }}
+            />
+          </div>
+          <span className="w-24 text-right font-mono text-[10px] text-zinc-400">
+            Reads {fmtNum(v.sectionReads)}{v.exposures > 0 ? ` · ${Math.round((v.sectionReads / v.exposures) * 100)}%` : ""}
+          </span>
+        </div>
+      )}
       {/* Engagement row — avg duration + engaged share, per-variant (PageView.variantMap) */}
       {showEngagement ? (
         <div className="mt-1.5 flex items-center gap-2" title={`Variant-tagged visits: avg ${fmtDuration(v.avgDuration)} on page · ${Math.round(v.engagedPct * 100)}% engaged`}>
@@ -722,6 +742,11 @@ export function DashboardView() {
   // visible (non-hidden) sections in the current config — context for the
   // Section performance panel's "tracked" badge
   const visibleSectionCount = sections.filter((s) => !s.hidden).length
+  // section display label → type: links Section performance rows to the
+  // A/B test that runs on that section (if any)
+  const typeByLabel = new Map(
+    sections.filter((s) => !s.hidden).map((s) => [SECTION_META[s.type].label, s.type] as const),
+  )
   const abTests = data?.abTests ?? []
 
   return (
@@ -1079,14 +1104,27 @@ export function DashboardView() {
                     {data!.topSections.map((s, i) => {
                       const pctViews = (s.count / Math.max(1, stats!.pageviews)) * 100
                       const barPct = (s.count / Math.max(1, data!.topSections[0].count)) * 100
+                      const rowTest = abTests.find((t) => t.sectionType === typeByLabel.get(s.name))
                       return (
                         <li key={s.name} className="flex items-center gap-2.5 rounded-lg border border-zinc-800/70 bg-zinc-900/50 px-2.5 py-1.5">
                           <span className="w-5 shrink-0 text-center font-mono text-[10px] tabular-nums text-zinc-600" aria-hidden>
                             {i + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="mb-1 flex justify-between gap-2 text-[11px]">
-                              <span className="truncate text-zinc-300">{s.name}</span>
+                            <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate text-zinc-300">{s.name}</span>
+                                {rowTest && (
+                                  <button
+                                    type="button"
+                                    onClick={() => jumpToAbTest(rowTest.key)}
+                                    className="flex shrink-0 items-center gap-0.5 rounded border border-violet-500/30 bg-violet-500/10 px-1 py-px text-[8px] font-bold uppercase tracking-wider text-violet-300 transition-colors hover:bg-violet-500/20"
+                                    title={`${rowTest.sectionLabel} runs an A/B test — view per-variant reads and CTR`}
+                                  >
+                                    <Sparkles className="h-2 w-2" aria-hidden /> A/B
+                                  </button>
+                                )}
+                              </span>
                               <span className="shrink-0 font-mono tabular-nums text-zinc-500">
                                 {fmtNum(s.count)} · {Math.round(pctViews)}%
                               </span>

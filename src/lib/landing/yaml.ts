@@ -37,6 +37,9 @@ export function normalizeConfig(input: unknown): LandingConfig {
         ? layout
         : "split-right"
       merged.cta = validCta(rs.cta) ?? (fresh as { cta: { label: string; href: string } }).cta
+      // sticky mobile CTA: boolean opt-out (default ON — only `false` sticks)
+      if (rs.stickyCta === false) merged.stickyCta = false
+      else delete merged.stickyCta
     }
     if (type === "features") {
       merged.style = ["grid", "alternating", "bento", "tabs", "carousel"].includes(rs.style as string) ? rs.style : "grid"

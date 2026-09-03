@@ -56,6 +56,8 @@ export interface HeroSection {
   secondaryCta?: Cta
   image?: string // url or empty
   stats?: { value: string; label: string }[]
+  /** sticky mobile CTA bar on the published page (default ON when undefined) */
+  stickyCta?: boolean
   ab?: AbConfig
 }
 
@@ -366,6 +368,10 @@ export interface AbVariantResult {
   ctr: number // 0-1
   avgDuration: number // seconds — mean time-on-page for visits exposed to this variant
   engagedPct: number // 0-1 — share of exposed visits that engaged (≥15s or interacted)
+  /** Variant-tagged section_view events for this test's section (0 when the
+   *  section has no read tracking yet — e.g. the hero, where the pageview IS
+   *  the read). reach = sectionReads / exposures. */
+  sectionReads: number
 }
 
 /** One section-scoped A/B test in the analytics payload (hero, pricing, final CTA…). */

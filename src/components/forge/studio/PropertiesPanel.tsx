@@ -685,6 +685,12 @@ function HeroEditor({ section, update }: EditorProps<HeroSection>) {
         suggestion={`Wide hero marketing shot for ${brand.name}: ${section.badge || section.headline || brand.tagline || "product"}. Modern, premium, cinematic lighting, on-theme.`}
         size="1440x768"
       />
+      <SwitchField
+        label="Sticky mobile CTA"
+        checked={section.stickyCta !== false}
+        onChange={(v) => update({ stickyCta: v ? undefined : false })}
+        hint="Brand-colored quick-action bar on phones — appears once the hero scrolls away, yields at the final CTA"
+      />
       <ListEditor
         label="Trust stats"
         items={section.stats ?? []}
@@ -1153,6 +1159,7 @@ function SectionEditor({ section }: { section: Section }) {
 function FontPicker() {
   const font = useForge((s) => s.config.brand.font)
   const updateBrand = useForge((s) => s.updateBrand)
+  const dirty = useForge((s) => s.dirty)
   const activePair = FONT_PAIRS.find((p) => p.id === (font ?? "system"))
 
   // stream every ✦ pair once so the tiles preview true faces
@@ -1211,11 +1218,18 @@ function FontPicker() {
           <>
             <span className="text-violet-300">✦ {activePair.label}</span> — webfonts stream from Google Fonts on the
             preview, published page and export; a fallback system stack renders while they load or if the visitor is
-            offline.
+            offline.{" "}
+            {dirty ? (
+              <span className="text-amber-300/80">Draft — unsaved changes not on the published page yet.</span>
+            ) : (
+              <span className="text-emerald-300/80">Live on the published page ✓</span>
+            )}
           </>
         ) : (
-          <>Display type for headlines, body stays readable. System stacks need no webfont download; ✦ pairs add
-          brand-true Google type.</>
+          <>
+            Display type for headlines, body stays readable. System stacks need no webfont download; ✦ pairs add
+            brand-true Google type.
+          </>
         )}
       </p>
     </div>

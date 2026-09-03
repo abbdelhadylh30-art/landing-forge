@@ -43,6 +43,9 @@ export function PublishedPage({ slug }: { slug: string }) {
   const [variant, setVariant] = React.useState<string | null>(null)
   /** sectionId → assigned variant (per section-level test) */
   const [variantMap, setVariantMap] = React.useState<Record<string, string>>({})
+  /** ref mirror of variantMap — the section-view observer reads it at fire
+   *  time so it never re-arms (and never double-counts) when assignments land */
+  const variantMapRef = React.useRef<Record<string, string>>({})
   const [chromeOpen, setChromeOpen] = React.useState(true)
   const [copied, setCopied] = React.useState(false)
 
@@ -114,6 +117,7 @@ export function PublishedPage({ slug }: { slug: string }) {
     const primary = tests[0] ?? null
     const primaryName = primary ? assigned[primary.section.id] : null
 
+    variantMapRef.current = assigned
     setVariantMap(assigned)
     setVariant(primaryName)
     for (const t of tests) {
@@ -209,7 +213,9 @@ export function PublishedPage({ slug }: { slug: string }) {
       io?.disconnect()
     }
   }, [state])
-  const stickyCtaVisible = stickyCtaEligible && !finalCtaOnScreen && !!stickyCtaLabel
+  // hero opt-out (stickyCta === false) disables the bar entirely
+  const stickyCtaVisible =
+    stickyCtaEligible && !finalCtaOnScreen && !!stickyCtaLabel && heroSection?.stickyCta !== false
   const stickyAccent =
     (config?.brand.accent && config.brand.accent) || (config ? getTheme(config.themeId).vars.accent : "#8b5cf6")
 
@@ -248,6 +254,9 @@ export function PublishedPage({ slug }: { slug: string }) {
   // one section_view event (label = the section's meta label, the same
   // convention the traffic seeder uses). Powers the "Section performance"
   // panel on the dashboard: which parts of the page actually get read.
+  // Hero is skipped — the pageview itself IS the hero read (funnel row 1);
+  // sections under an A/B test get their event tagged with the visitor's
+  // variant → per-variant read counts on the A/B card.
   React.useEffect(() => {
     if (state.kind !== "ready") return
     const { id, config } = state.project
@@ -257,6 +266,7 @@ export function PublishedPage({ slug }: { slug: string }) {
     const secByAnchor = new Map<string, string>()
     for (const [secId, anchor] of sectionAnchors(config)) secByAnchor.set(anchor, secId)
     const labelBySec = new Map(config.sections.map((s) => [s.id, SECTION_META[s.type].label]))
+    const typeBySec = new Map(config.sections.map((s) => [s.id, s.type]))
     // dedupe by LABEL per visit (not per section instance) — matches the
     // seeder's "distinct sections read" convention; two Features blocks
     // count as one "Features" read
@@ -264,20 +274,33 @@ export function PublishedPage({ slug }: { slug: string }) {
     const io = new IntersectionObserver(
       (entries) => {
         for (const en of entries) {
-          if (en.intersectionRatio < 0.5) continue
+          // "being read" = at least half of the section is visible, OR the
+          // section spans the viewport top (reader scrolled INTO it — tall
+          // sections like pricing can be taller than the viewport and would
+          // otherwise never reach a 0.5 self-ratio)
+          const rect = en.boundingClientRect
+          const scrolledInto = rect.top <= 0 && rect.bottom > 0
+          if (en.intersectionRatio < 0.5 && !scrolledInto) continue
           const secId = secByAnchor.get((en.target as HTMLElement).id)
           if (!secId) continue
           const label = labelBySec.get(secId) ?? "Section"
           if (seen.has(label)) continue
           seen.add(label)
           io.unobserve(en.target)
-          void track(id, { type: "section_view", label, path: `/${slug}` })
+          const sec = config.sections.find((s) => s.id === secId)
+          const readVariant = sec && sectionAb(sec)?.enabled ? variantMapRef.current[secId] : undefined
+          void track(id, { type: "section_view", label, path: `/${slug}`, ...(readVariant ? { variant: readVariant } : {}) })
           setEvents((n) => n + 1)
         }
       },
-      { root: null, threshold: [0.5] },
+      { root: null, threshold: [0, 0.5] },
     )
-    for (const el of Array.from(root.querySelectorAll<HTMLElement>(":scope > div[id]"))) io.observe(el)
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>(":scope > div[id]"))) {
+      // skip the hero block — the pageview already counts it
+      const secId = secByAnchor.get(el.id)
+      if (secId && typeBySec.get(secId) === "hero") continue
+      io.observe(el)
+    }
     return () => io.disconnect()
   }, [state, slug])
 
