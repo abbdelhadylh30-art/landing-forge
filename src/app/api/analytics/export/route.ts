@@ -4,7 +4,7 @@
 // GET /api/analytics/export?projectId=xxx
 // → 200 text/csv  (Content-Disposition: attachment; filename="analytics-{slug}.csv")
 //    Section 1: PAGEVIEWS table (id,date,visitorId,referrer,country,device,
-//               browser,variant,duration,isBounce,engaged)
+//               browser,variant,variantMap,duration,isBounce,engaged)
 //    blank line
 //    Section 2: EVENTS table (id,date,type,label,variant,path)
 // → 400 / 404 as JSON { error }
@@ -34,8 +34,18 @@ export async function GET(req: NextRequest) {
 
     const lines: string[] = []
     lines.push("PAGEVIEWS")
-    lines.push("id,date,visitorId,referrer,country,device,browser,variant,duration,isBounce,engaged")
+    lines.push("id,date,visitorId,referrer,country,device,browser,variant,variantMap,duration,isBounce,engaged")
     for (const v of views) {
+      // compact the map to "sectionId=variant;sectionId=variant" for spreadsheets
+      let mapCell = ""
+      if (v.variantMap) {
+        try {
+          const vm = JSON.parse(v.variantMap) as Record<string, string>
+          mapCell = Object.entries(vm).map(([k, val]) => `${k}=${val}`).join(";")
+        } catch {
+          mapCell = ""
+        }
+      }
       lines.push(
         [
           v.id,
@@ -46,6 +56,7 @@ export async function GET(req: NextRequest) {
           v.device,
           v.browser,
           v.variant ?? "",
+          mapCell,
           String(v.duration),
           v.isBounce ? "true" : "false",
           !v.isBounce ? "true" : "false",

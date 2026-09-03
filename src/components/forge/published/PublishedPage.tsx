@@ -125,6 +125,7 @@ export function PublishedPage({ slug }: { slug: string }) {
       browser: detectBrowser(),
       visitorId: getVisitorId(),
       variant: primaryName ?? undefined,
+      variantMap: tests.length ? assigned : undefined,
       duration: 0,
       isBounce: true, // provisional bounce — engagement pings de-bounce this visit
     }).then((pageviewId) => {

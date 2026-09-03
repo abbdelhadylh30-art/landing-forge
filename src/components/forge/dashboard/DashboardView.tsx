@@ -259,8 +259,9 @@ function relTime(at: number): string {
   return `${Math.floor(m / 60)}h ago`
 }
 
-/** "Latest activity" strip — the last few events, pushed live over the relay. */
-function LiveEventsPanel({ items, push }: { items: TickerItem[]; push: boolean }) {
+/** "Latest activity" strip — the last few events, pushed live over the relay.
+ *  Rows relating to an A/B test click through to that test's tab. */
+function LiveEventsPanel({ items, push, onJumpToTest }: { items: TickerItem[]; push: boolean; onJumpToTest?: (testKey: string) => void }) {
   const [, force] = React.useReducer((x: number) => x + 1, 0)
   React.useEffect(() => {
     const t = setInterval(force, 5000) // relative timestamps drift slowly
@@ -291,11 +292,26 @@ function LiveEventsPanel({ items, push }: { items: TickerItem[]; push: boolean }
         <ul className="grid gap-1.5 sm:grid-cols-2">
           {shown.map((ev) => {
             const { icon: Icon, cls } = tickerIcon(ev.type)
+            const testKey = ev.type === "variant_exposure" ? ev.label : ev.type === "cta_click" ? ev.label.split(":")[0] : null
+            const clickable = testKey !== null
             return (
               <li
                 key={ev.id}
-                className="lf-ticker-in flex items-center gap-2.5 rounded-lg border border-zinc-800/70 bg-zinc-900/50 px-2.5 py-1.5"
-                title={`${ev.type}${ev.variant ? ` · variant ${ev.variant}` : ""} · ${new Date(ev.at).toLocaleTimeString()}`}
+                role={clickable && onJumpToTest ? "button" : undefined}
+                tabIndex={clickable && onJumpToTest ? 0 : undefined}
+                aria-label={clickable && onJumpToTest ? `View the ${ev.label.split(":")[0]} A/B test results` : undefined}
+                onClick={() => clickable && onJumpToTest?.(testKey!)}
+                onKeyDown={(e) => {
+                  if (clickable && onJumpToTest && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault()
+                    onJumpToTest(testKey!)
+                  }
+                }}
+                className={cn(
+                  "lf-ticker-in flex items-center gap-2.5 rounded-lg border border-zinc-800/70 bg-zinc-900/50 px-2.5 py-1.5 transition-all",
+                  clickable && onJumpToTest && "cursor-pointer hover:border-violet-500/40 hover:bg-violet-500/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/50"
+                )}
+                title={`${ev.type}${ev.variant ? ` · variant ${ev.variant}` : ""} · ${new Date(ev.at).toLocaleTimeString()}${clickable && onJumpToTest ? " — click to view its A/B test" : ""}`}
               >
                 <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md border", cls)} aria-hidden>
                   <Icon className="h-3 w-3" />
@@ -305,6 +321,7 @@ function LiveEventsPanel({ items, push }: { items: TickerItem[]; push: boolean }
                   <span className="text-zinc-500"> · {ev.label}</span>
                   {ev.variant && <span className="ml-1 rounded bg-violet-500/15 px-1 py-0.5 font-mono text-[9px] font-bold text-violet-300">v{ev.variant}</span>}
                 </span>
+                {clickable && onJumpToTest && <TrendingUp className="h-3 w-3 shrink-0 text-violet-400/60" aria-hidden />}
                 <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">{relTime(ev.at)}</span>
               </li>
             )
@@ -317,7 +334,7 @@ function LiveEventsPanel({ items, push }: { items: TickerItem[]; push: boolean }
 
 // ── A/B tests card (multi-test: hero + section-level) ───────────────────────
 
-function AbVariantRow({ v, isWinner, primary }: { v: AbVariantResult; isWinner: boolean; primary: boolean }) {
+function AbVariantRow({ v, isWinner, showEngagement, isEngLeader }: { v: AbVariantResult; isWinner: boolean; showEngagement: boolean; isEngLeader: boolean }) {
   return (
     <div className={cn("rounded-lg border p-3 transition-colors", isWinner ? "border-amber-500/40 bg-amber-500/[0.04]" : "border-zinc-800 bg-zinc-900/50")}>
       <div className="flex items-center gap-2">
@@ -335,21 +352,21 @@ function AbVariantRow({ v, isWinner, primary }: { v: AbVariantResult; isWinner: 
           CTR {(v.ctr * 100).toFixed(1)}% · {v.clicks}/{v.exposures}
         </span>
       </div>
-      {/* Engagement row — avg duration + engaged share (primary test only:
-          PageView.variant carries a single tag, set from the primary assignment) */}
-      {primary ? (
+      {/* Engagement row — avg duration + engaged share, per-variant (PageView.variantMap) */}
+      {showEngagement ? (
         <div className="mt-1.5 flex items-center gap-2" title={`Variant-tagged visits: avg ${fmtDuration(v.avgDuration)} on page · ${Math.round(v.engagedPct * 100)}% engaged`}>
           <Timer className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
             <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400" style={{ width: `${Math.round(v.engagedPct * 100)}%` }} />
           </div>
           <span className="flex w-24 items-center justify-end gap-1 font-mono text-[10px] text-zinc-400">
+            {isEngLeader && <Crown className="h-2.5 w-2.5 text-amber-400" aria-label="Holds attention best" />}
             {fmtDuration(v.avgDuration)} · {Math.round(v.engagedPct * 100)}%
           </span>
         </div>
       ) : (
-        <p className="mt-1.5 text-right font-mono text-[9px] text-zinc-600" title="Time-on-page / engagement is tracked for the primary (page-level) test only">
-          section-scoped CTR
+        <p className="mt-1.5 text-right font-mono text-[9px] text-zinc-600" title="Per-variant time-on-page appears once variant-tagged visits exist (new data records every test assignment)">
+          awaiting per-variant visits
         </p>
       )}
     </div>
@@ -359,6 +376,9 @@ function AbVariantRow({ v, isWinner, primary }: { v: AbVariantResult; isWinner: 
 function AbTestPanel({ test, onPromote }: { test: AbTestResult; onPromote: (t: AbTestResult) => void }) {
   const withEngagement = test.variants.filter((x) => x.exposures > 0 && (x.avgDuration > 0 || x.engagedPct > 0))
   const engLeader = withEngagement.length >= 2 ? withEngagement.reduce((best, x) => (x.avgDuration > best.avgDuration ? x : best)) : null
+  // progress toward the auto-winner decision threshold
+  const samplePct = Math.min(100, Math.round((test.totalExposures / Math.max(1, test.sampleSize)) * 100))
+  const sampleReached = test.totalExposures >= test.sampleSize
   return (
     <div className="space-y-3">
       {test.winner && (
@@ -367,13 +387,44 @@ function AbTestPanel({ test, onPromote }: { test: AbTestResult; onPromote: (t: A
           Variant <b>{test.winner}</b> is winning (sample {fmtNum(test.totalExposures)} / {fmtNum(test.sampleSize)} reached) — auto-winner {test.autoWinner ? "ON" : "OFF"}
         </div>
       )}
+      {/* Sample progress — headroom before the auto-winner decision */}
+      {!test.winner && (
+        <div
+          className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2"
+          title={`${fmtNum(test.totalExposures)} of ${fmtNum(test.sampleSize)} exposures — ${test.autoWinner ? "the winner auto-promotes at this threshold" : "auto-winner is off; promote manually anytime"}`}
+        >
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="font-semibold text-zinc-400">
+              {sampleReached ? "Sample reached — winner armed" : `Sample progress · ${samplePct}%`}
+            </span>
+            <span className="font-mono tabular-nums text-zinc-500">
+              {fmtNum(test.totalExposures)} / {fmtNum(test.sampleSize)}
+            </span>
+          </div>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-800">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                sampleReached ? "bg-gradient-to-r from-amber-400 to-amber-300" : "bg-gradient-to-r from-violet-500 to-fuchsia-500"
+              )}
+              style={{ width: `${Math.max(2, samplePct)}%` }}
+            />
+          </div>
+        </div>
+      )}
       {!test.hasData && (
         <p className="text-[11px] text-zinc-500">
           No exposures recorded yet — use “Test preview” with a variant selected, or simulate traffic.
         </p>
       )}
       {test.variants.map((v) => (
-        <AbVariantRow key={v.name} v={v} isWinner={v.name === test.winner} primary={test.primary} />
+        <AbVariantRow
+          key={v.name}
+          v={v}
+          isWinner={v.name === test.winner}
+          showEngagement={test.hasEngagement}
+          isEngLeader={engLeader !== null && v.name === engLeader.name && v.avgDuration > 0}
+        />
       ))}
       {test.winner && (
         <Button size="sm" className="h-7 w-full gap-1 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-[11px] text-white hover:from-violet-600 hover:to-fuchsia-600 lf-glow" onClick={() => onPromote(test)}>
@@ -441,6 +492,20 @@ export function DashboardView() {
 
   // active A/B test tab (defaults to the primary test)
   const [abTab, setAbTab] = React.useState<string | null>(null)
+
+  // ticker row → relevant A/B test tab: match by section id, section type,
+  // or the legacy "hero" label (primary test)
+  const jumpToAbTest = React.useCallback(
+    (key: string) => {
+      const tests = data?.abTests ?? []
+      const hit = tests.find((t) => t.key === key) ?? tests.find((t) => t.sectionType === key) ?? (key === "hero" ? tests[0] : undefined)
+      if (hit) {
+        setAbTab(hit.key)
+        document.getElementById("ab-tests-card")?.scrollIntoView({ behavior: "smooth", block: "center" })
+      }
+    },
+    [data]
+  )
 
   const load = React.useCallback(
     async (opts?: { quiet?: boolean }) => {
@@ -696,8 +761,8 @@ export function DashboardView() {
             {/* Live "right now" strip — active visits, ticking timers */}
             <LiveVisitsPanel live={mergedLive ?? data!.live} liveEnabled={live} slug={slug} push={pushConnected} />
 
-            {/* Live events ticker — relay-pushed activity stream */}
-            <LiveEventsPanel items={ticker} push={pushConnected} />
+            {/* Live events ticker — relay-pushed activity stream; rows jump to their A/B test */}
+            <LiveEventsPanel items={ticker} push={pushConnected} onJumpToTest={jumpToAbTest} />
 
             {/* Stat cards */}
             <div className="lf-fade-up-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -862,7 +927,7 @@ export function DashboardView() {
               </div>
 
               {/* A/B tests — section-level (hero + any section with a test) */}
-              <div style={{ animationDelay: "620ms" }}>
+              <div id="ab-tests-card" style={{ animationDelay: "620ms" }}>
                 <PanelCard
                   title={abTests.length > 1 ? `A/B tests — ${abTests.length} live` : abTests.length === 1 ? `A/B test — ${abTests[0].sectionLabel.toLowerCase()}` : "A/B tests"}
                   icon={Sparkles}
@@ -894,7 +959,7 @@ export function DashboardView() {
                                 )}
                               >
                                 {t.sectionLabel}
-                                {t.primary && <span className="rounded bg-violet-500/20 px-1 text-[8px] font-bold uppercase tracking-wide text-violet-300" title="Primary test — tags the pageview itself (per-variant time-on-page & engagement)">page</span>}
+                                {t.primary && <span className="rounded bg-violet-500/20 px-1 text-[8px] font-bold uppercase tracking-wide text-violet-300" title="Primary test — the page-level experiment (also tags the pageview itself)">page</span>}
                                 {t.winner && <Crown className="h-2.5 w-2.5 text-amber-400" aria-label="winner" />}
                               </button>
                             )

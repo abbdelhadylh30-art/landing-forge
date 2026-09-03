@@ -31,7 +31,8 @@ model PageView {
   country    String   @default("US")
   device     String   @default("desktop")
   browser    String   @default("Chrome")
-  variant    String? // A/B variant this visit was exposed to (per-variant engagement)
+  variant    String? // PRIMARY A/B variant this visit was exposed to (per-variant duration/engagement)
+  variantMap String? // JSON: sectionId → variant name for EVERY enabled section-level test
   duration   Int      @default(0) // seconds in page
   isBounce   Boolean  @default(false)
   createdAt  DateTime @default(now())

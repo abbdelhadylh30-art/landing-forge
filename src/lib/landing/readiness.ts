@@ -1,6 +1,6 @@
 import type { LandingConfig } from "./types"
 import { collectAnchorLinks, findBrokenAnchorLinks } from "./anchors"
-import { getAbTests } from "./ab"
+import { getAbTests, sectionAb } from "./ab"
 
 export type ReadinessLevel = "pass" | "warn" | "fail"
 
@@ -20,6 +20,16 @@ export interface ReadinessReport {
   grade: "A" | "B" | "C" | "D"
   checks: ReadinessCheck[]
   counts: { pass: number; warn: number; fail: number }
+  /** Non-scoring growth ideas (e.g. "test a value-framed pricing title") —
+   *  never affect the score; clicking one jumps to the section. */
+  suggestions: ReadinessSuggestion[]
+}
+
+export interface ReadinessSuggestion {
+  id: string
+  label: string
+  detail: string
+  selectSectionId?: string
 }
 
 const TITLE_MIN = 30
@@ -271,6 +281,28 @@ export function auditConfig(config: LandingConfig): ReadinessReport {
   const score = Math.round((earned / totalWeight) * 100)
   const grade: ReadinessReport["grade"] = score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : "D"
 
+  // ── Growth ideas (non-scoring) ──────────────────────────────────────────
+  // AB-capable sections that could run their own experiment, by leverage.
+  const SUGGEST_META: { type: string; label: string; detail: string }[] = [
+    { type: "pricing", label: "Test a pricing headline", detail: "Pricing copy is a high-leverage experiment — try a value-framed title (“Simple plans that scale with you”) against the current one." },
+    { type: "cta-final", label: "Test the closing CTA", detail: "The final CTA converts readers at the bottom — an urgency or outcome-framed headline often moves it." },
+    { type: "contact", label: "Test the contact title", detail: "A warmer contact-form title (“Let's talk about your project”) can lift submit rates." },
+    { type: "features", label: "Test the features framing", detail: "Benefit-led vs. capability-led feature titles land differently — worth an experiment." },
+    { type: "testimonials", label: "Test the proof heading", detail: "How you frame social proof (“Loved by teams everywhere”) changes how it's read." },
+    { type: "faq", label: "Test the FAQ heading", detail: "A question-style FAQ title can outperform a plain label — cheap to try." },
+  ]
+  const testsByType = new Map<string, number>() // section type → enabled tests
+  for (const t of getAbTests(config)) testsByType.set(t.section.type, (testsByType.get(t.section.type) ?? 0) + 1)
+  const suggestions: ReadinessSuggestion[] = []
+  for (const meta of SUGGEST_META) {
+    const tested = (testsByType.get(meta.type) ?? 0) > 0
+    const section = visible.find((s) => s.type === meta.type && !sectionAb(s)?.enabled)
+    if (section && !tested) {
+      suggestions.push({ id: `suggest-${meta.type}`, label: meta.label, detail: meta.detail, selectSectionId: section.id })
+    }
+    if (suggestions.length >= 3) break
+  }
+
   return {
     score,
     grade,
@@ -280,5 +312,6 @@ export function auditConfig(config: LandingConfig): ReadinessReport {
       warn: checks.filter((c) => c.level === "warn").length,
       fail: checks.filter((c) => c.level === "fail").length,
     },
+    suggestions,
   }
 }

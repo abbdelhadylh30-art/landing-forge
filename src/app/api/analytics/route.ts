@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
       await Promise.all([
         db.pageView.findMany({
           where: { projectId, createdAt: { gte: start } },
-          select: { visitorId: true, variant: true, duration: true, isBounce: true, createdAt: true },
+          select: { visitorId: true, variant: true, variantMap: true, duration: true, isBounce: true, createdAt: true },
         }),
         db.event.findMany({
           where: { projectId, createdAt: { gte: start } },
@@ -156,18 +156,38 @@ export async function GET(req: NextRequest) {
     // • clicks: the hero (page-level) test counts ANY variant-tagged CTA click;
     //   section tests only count clicks whose label starts with their section
     //   type ("pricing: …") — section-scoped attribution
-    // • per-variant duration/engagement only for the primary test (PageView
-    //   .variant carries a single tag, set from the primary assignment)
+    // • per-variant duration/engagement for EVERY test via PageView.variantMap
+    //   (sectionId → variant); the primary test additionally falls back to the
+    //   single `variant` column so pre-variantMap data keeps working
     const config = parseStoredConfig(project.config)
     const tests = getAbTests(config)
-    const pvByVariant = new Map<string, { total: number; duration: number; engaged: number }>()
+    // per-test per-variant engagement: testKey → variantName → aggregates
+    const engagement = new Map<string, Map<string, { total: number; duration: number; engaged: number }>>()
     for (const v of views) {
-      if (!v.variant) continue
-      const agg = pvByVariant.get(v.variant) ?? { total: 0, duration: 0, engaged: 0 }
-      agg.total++
-      agg.duration += v.duration
-      if (!v.isBounce) agg.engaged++
-      pvByVariant.set(v.variant, agg)
+      let vm: Record<string, string> | null = null
+      if (v.variantMap) {
+        try {
+          vm = JSON.parse(v.variantMap) as Record<string, string>
+        } catch {
+          vm = null
+        }
+      }
+      for (const test of tests) {
+        // assignment for this test: variantMap entry, else (primary only) the
+        // legacy single-variant tag on the row
+        const name = vm?.[test.section.id] ?? (test === tests[0] ? v.variant : null)
+        if (!name) continue
+        let byVariant = engagement.get(test.section.id)
+        if (!byVariant) {
+          byVariant = new Map()
+          engagement.set(test.section.id, byVariant)
+        }
+        const agg = byVariant.get(name) ?? { total: 0, duration: 0, engaged: 0 }
+        agg.total++
+        agg.duration += v.duration
+        if (!v.isBounce) agg.engaged++
+        byVariant.set(name, agg)
+      }
     }
     const abTests: AbTestResult[] = tests.map(({ section, ab }, testIdx) => {
       const primary = testIdx === 0
@@ -186,7 +206,7 @@ export async function GET(req: NextRequest) {
       const variants = ab.variants.map((v) => {
         const exposures = exposuresBy.get(v.name) ?? 0
         const clicks = clicksBy.get(v.name) ?? 0
-        const pv = primary ? pvByVariant.get(v.name) : undefined
+        const pv = engagement.get(section.id)?.get(v.name)
         return {
           name: v.name,
           headline: v.headline,
@@ -204,6 +224,8 @@ export async function GET(req: NextRequest) {
       if (ab.autoWinner && totalExposures >= ab.sampleSize && someClicks) {
         winner = variants.reduce((best, v) => (v.ctr > best.ctr ? v : best)).name
       }
+      // does this test have per-variant visit data at all (variantMap)?
+      const hasEngagement = (engagement.get(section.id)?.size ?? 0) > 0
       return {
         key: section.id,
         sectionId: section.id,
@@ -216,6 +238,7 @@ export async function GET(req: NextRequest) {
         winner,
         totalExposures,
         hasData: totalExposures > 0,
+        hasEngagement,
         primary,
       }
     })

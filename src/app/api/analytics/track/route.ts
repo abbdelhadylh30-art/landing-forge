@@ -30,6 +30,22 @@ type TrackType = (typeof TRACK_TYPES)[number]
 /** A visit that stays ≥ 15s counts as engaged (industry-standard bounce window). */
 const ENGAGED_AFTER_S = 15
 
+/** Coerce an optional `variantMap` payload (sectionId → variant name) into
+ *  a compact JSON string, or null. Caps size, drops junk entries. */
+function validVariantMap(input: unknown): string | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null
+  const out: Record<string, string> = {}
+  let n = 0
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    if (n >= 8) break
+    if (typeof v !== "string" || !v) continue
+    if (!/^[a-zA-Z0-9_-]{1,40}$/.test(k)) continue
+    out[k] = v.slice(0, 2)
+    n++
+  }
+  return n ? JSON.stringify(out) : null
+}
+
 export async function POST(req: NextRequest) {
   return guard(async () => {
     const body = await readJsonBody(req)
@@ -53,6 +69,7 @@ export async function POST(req: NextRequest) {
           browser: str(body.browser) || "Chrome",
           visitorId: str(body.visitorId) || "anon",
           variant: optStr(body.variant),
+          variantMap: validVariantMap(body.variantMap),
           duration: Math.max(0, Math.floor(num(body.duration) ?? 0)),
           isBounce: body.isBounce === true,
         },

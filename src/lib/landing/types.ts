@@ -381,7 +381,9 @@ export interface AbTestResult {
   winner: string | null
   totalExposures: number
   hasData: boolean
-  /** True for the page-level (primary) test — the only one with per-variant duration/engagement (PageView.variant holds a single tag). */
+  /** Per-variant duration/engagement data exists for this test (PageView.variantMap). */
+  hasEngagement: boolean
+  /** True for the page-level (primary) test — historically the only one with per-variant engagement; now every test with variantMap data has it. */
   primary: boolean
 }
 

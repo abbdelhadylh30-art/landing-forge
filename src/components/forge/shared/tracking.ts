@@ -30,6 +30,8 @@ export interface TrackPayload {
   isBounce?: boolean
   label?: string
   variant?: string
+  /** sectionId → assigned variant for every enabled section-level test (pageview only). */
+  variantMap?: Record<string, string>
   value?: number
 }
 

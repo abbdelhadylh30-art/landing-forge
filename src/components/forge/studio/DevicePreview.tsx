@@ -50,6 +50,8 @@ export function DevicePreview({ className }: { className?: string }) {
         ...(abTests.length && (abVariants[abTests[0].section.id] ?? abVariant)
           ? { variant: abVariants[abTests[0].section.id] ?? abVariant ?? undefined }
           : {}),
+        // record the studio's forced variant selection for every section test
+        ...(abTests.length ? { variantMap: Object.fromEntries(abTests.map((t) => [t.section.id, abVariants[t.section.id] ?? (t.section.type === "hero" ? abVariant ?? null : null)]).filter(([, v]) => v != null) as [string, string][]) } : {}),
       })
       // record an exposure for every section-level test being previewed
       for (const t of abTests) {

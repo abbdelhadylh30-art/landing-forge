@@ -83,6 +83,7 @@ interface ViewRow {
   device: string
   browser: string
   variant: string | null
+  variantMap: string | null
   duration: number
   isBounce: boolean
   createdAt: Date
@@ -231,6 +232,7 @@ export async function POST(req: NextRequest) {
           device: pickWeighted(DEVICES),
           browser: pickWeighted(BROWSERS),
           variant,
+          variantMap: testPicks.size ? JSON.stringify(Object.fromEntries(testPicks)) : null,
           duration,
           isBounce,
           createdAt: t,
@@ -301,6 +303,13 @@ export async function POST(req: NextRequest) {
       const t = new Date(now.getTime() - randInt(0, 48) * 3600 * 1000 - randInt(0, 3600) * 1000)
       if (t.getTime() > now.getTime()) t.setTime(now.getTime() - 60_000)
       const deepVariant = primary && Math.random() < 0.7 ? pickWeighted(primary.ab.variants.map((v) => [v.name, Math.max(1, v.weight)] as [string, number])) : null
+      // deep readers participate in every test's winning group (richer story)
+      const deepPicks = new Map<string, string>()
+      for (const test of tests) {
+        if (test.ab.variants.length >= 2) {
+          deepPicks.set(test.section.id, test.ab.variants[test.ab.variants.length - 1].name)
+        }
+      }
       viewRows.push({
         projectId,
         visitorId: visitors[randInt(0, visitors.length - 1)],
@@ -310,6 +319,7 @@ export async function POST(req: NextRequest) {
         device: pickWeighted(DEVICES),
         browser: pickWeighted(BROWSERS),
         variant: deepVariant,
+        variantMap: deepPicks.size ? JSON.stringify(Object.fromEntries(deepPicks)) : null,
         duration: randInt(300, 900),
         isBounce: false,
         createdAt: t,

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { AlertTriangle, Check, CircleAlert, Gauge, X } from "lucide-react"
+import { AlertTriangle, Check, CircleAlert, Gauge, Sparkles, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
 import { useUi } from "@/lib/landing/uiStore"
 import { auditConfig } from "@/lib/landing/readiness"
-import type { ReadinessCheck, ReadinessLevel } from "@/lib/landing/readiness"
+import type { ReadinessCheck, ReadinessLevel, ReadinessSuggestion } from "@/lib/landing/readiness"
 import type { LandingConfig } from "@/lib/landing/types"
 import { SECTION_META } from "@/lib/landing/types"
 
@@ -141,6 +141,16 @@ export function ReadinessDialog() {
     if (sec) toast.info(`Editing ${SECTION_META[sec.type].label}`, { description: check.label })
   }
 
+  const onSuggestion = (s: ReadinessSuggestion) => {
+    if (!s.selectSectionId) return
+    useUi.getState().setView("studio")
+    useForge.getState().setPreviewMode(false)
+    selectSection(s.selectSectionId)
+    closeDialog()
+    const sec = config.sections.find((x) => x.id === s.selectSectionId)
+    if (sec) toast.info(`Editing ${SECTION_META[sec.type].label}`, { description: `${s.label} — enable “A/B test this section” in the properties panel.` })
+  }
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && closeDialog()}>
       <DialogContent className="max-w-lg border-zinc-800 bg-zinc-900/95 p-0 backdrop-blur-xl sm:max-w-lg">
@@ -238,6 +248,37 @@ export function ReadinessDialog() {
               </ul>
             </section>
           ))}
+
+          {/* Growth ideas — non-scoring experiment suggestions */}
+          {report.suggestions.length > 0 && (
+            <section aria-label="Growth ideas">
+              <div className="mb-2 flex items-center gap-2">
+                <h4 className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-violet-400">
+                  <Sparkles className="h-3 w-3" /> Growth ideas
+                </h4>
+                <span className="h-px flex-1 bg-violet-500/20" />
+                <span className="text-[10px] text-zinc-600">not scored</span>
+              </div>
+              <ul className="space-y-1.5">
+                {report.suggestions.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSuggestion(s)}
+                      className="group flex w-full items-start gap-2.5 rounded-lg border border-violet-500/20 bg-violet-500/[0.05] p-2.5 text-left transition-all hover:border-violet-500/45 hover:bg-violet-500/[0.09]"
+                    >
+                      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[12px] font-semibold text-zinc-200">{s.label}</span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">{s.detail}</span>
+                      </span>
+                      <span className="mt-0.5 shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-300 opacity-0 transition-opacity group-hover:opacity-100">Try it</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </DialogContent>
     </Dialog>
