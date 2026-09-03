@@ -4,6 +4,7 @@ import type { HeroSection, LandingConfig, Section } from "@/lib/landing/types"
 import { SECTION_META } from "@/lib/landing/types"
 
 import { themeStyle } from "@/lib/landing/themes"
+import { useGoogleFonts } from "@/lib/landing/googleFonts"
 import { abOverrideFor } from "@/lib/landing/ab"
 
 import { cn } from "@/lib/utils"
@@ -44,6 +45,9 @@ export function LandingPreview({
   onSectionSelect,
 }: LandingPreviewProps) {
   const hero = config.sections.find((s): s is HeroSection => s.type === "hero" && s.ab?.enabled === true)
+  // ✦ webfont pairs: stream the css2 stylesheet (system stacks stay the
+  // fallback if the network is unavailable)
+  useGoogleFonts(config.brand.font)
   const ab = hero?.ab
   // hero variant: per-section map wins, legacy prop is the fallback
   const heroVariantName = (hero && abVariants?.[hero.id]) || abVariant || null

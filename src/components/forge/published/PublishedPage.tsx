@@ -9,6 +9,9 @@ import { LandingPreview } from "@/components/forge/preview/LandingPreview"
 import { track, pingEngagement, detectDevice, detectBrowser, getVisitorId } from "@/components/forge/shared/tracking"
 import { useVisitorRelay } from "@/components/forge/shared/livesocket"
 import { getAbTests, assignAbVariants, sectionAb } from "@/lib/landing/ab"
+import { sectionAnchors } from "@/lib/landing/anchors"
+import { getTheme } from "@/lib/landing/themes"
+import { SECTION_META } from "@/lib/landing/types"
 import type { LandingConfig, ProjectSummary, ProjectWithConfig, Section } from "@/lib/landing/types"
 
 type LoadState =
@@ -167,6 +170,60 @@ export function PublishedPage({ slug }: { slug: string }) {
     }
   }, [state.kind, relay.heartbeat])
 
+  // ── Sticky mobile CTA (conversion booster): a slim brand-colored bar on
+  // phones, shown once the hero has scrolled away and hidden again when the
+  // page's own final CTA is on screen — no nagging where the real ask lives.
+  const [stickyCtaEligible, setStickyCtaEligible] = React.useState(false)
+  const [finalCtaOnScreen, setFinalCtaOnScreen] = React.useState(false)
+  const heroSection = config?.sections.find((s): s is Extract<Section, { type: "hero" }> => s.type === "hero" && !s.hidden)
+  const stickyCtaLabel = heroSection?.cta.label?.trim()
+  React.useEffect(() => {
+    if (state.kind !== "ready") return
+    // the published page scrolls inside its own overflow container (h-dvh),
+    // so the listener rides that element — window.scrollY stays 0 here
+    const scrollRoot = document.querySelector<HTMLElement>("[data-lf-scroll-root]")
+    const readScroll = () => (scrollRoot ? scrollRoot.scrollTop : window.scrollY)
+    const onScroll = () => setStickyCtaEligible(readScroll() > 600)
+    onScroll()
+    scrollRoot?.addEventListener("scroll", onScroll, { passive: true })
+    window.addEventListener("scroll", onScroll, { passive: true })
+    // watch the final CTA — when it fills half the viewport, the sticky bar yields
+    const anchors = sectionAnchors(state.project.config)
+    const finalCta = state.project.config.sections.find((s) => s.type === "cta-final" && !s.hidden)
+    let io: IntersectionObserver | undefined
+    if (finalCta && typeof IntersectionObserver !== "undefined") {
+      const el = document.getElementById(anchors.get(finalCta.id) ?? "cta")
+      if (el) {
+        io = new IntersectionObserver(
+          (entries) => {
+            for (const en of entries) setFinalCtaOnScreen(en.intersectionRatio >= 0.5)
+          },
+          { threshold: [0.5] },
+        )
+        io.observe(el)
+      }
+    }
+    return () => {
+      scrollRoot?.removeEventListener("scroll", onScroll)
+      window.removeEventListener("scroll", onScroll)
+      io?.disconnect()
+    }
+  }, [state])
+  const stickyCtaVisible = stickyCtaEligible && !finalCtaOnScreen && !!stickyCtaLabel
+  const stickyAccent =
+    (config?.brand.accent && config.brand.accent) || (config ? getTheme(config.themeId).vars.accent : "#8b5cf6")
+
+  const onStickyCtaClick = () => {
+    if (!heroSection || !stickyCtaLabel) return
+    handleCtaClick(heroSection, `${stickyCtaLabel} (sticky)`)
+    const href = heroSection.cta.href
+    if (href.startsWith("#")) {
+      document.getElementById(href.slice(1))?.scrollIntoView({ behavior: "smooth", block: "start" })
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    }
+  }
+
   // ── Real page title from the project's SEO settings
   React.useEffect(() => {
     if (state.kind === "ready") document.title = state.project.config.seo.title || state.project.name
@@ -186,6 +243,43 @@ export function PublishedPage({ slug }: { slug: string }) {
     }, 200)
     return () => clearTimeout(t)
   }, [state])
+
+  // ── Section view tracking: each section that scrolls ≥50% into view fires
+  // one section_view event (label = the section's meta label, the same
+  // convention the traffic seeder uses). Powers the "Section performance"
+  // panel on the dashboard: which parts of the page actually get read.
+  React.useEffect(() => {
+    if (state.kind !== "ready") return
+    const { id, config } = state.project
+    const root = document.querySelector<HTMLElement>(".lf-brand-font")
+    if (!root || typeof IntersectionObserver === "undefined") return
+    // anchor (DOM id) → section id, then section id → display label
+    const secByAnchor = new Map<string, string>()
+    for (const [secId, anchor] of sectionAnchors(config)) secByAnchor.set(anchor, secId)
+    const labelBySec = new Map(config.sections.map((s) => [s.id, SECTION_META[s.type].label]))
+    // dedupe by LABEL per visit (not per section instance) — matches the
+    // seeder's "distinct sections read" convention; two Features blocks
+    // count as one "Features" read
+    const seen = new Set<string>()
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) {
+          if (en.intersectionRatio < 0.5) continue
+          const secId = secByAnchor.get((en.target as HTMLElement).id)
+          if (!secId) continue
+          const label = labelBySec.get(secId) ?? "Section"
+          if (seen.has(label)) continue
+          seen.add(label)
+          io.unobserve(en.target)
+          void track(id, { type: "section_view", label, path: `/${slug}` })
+          setEvents((n) => n + 1)
+        }
+      },
+      { root: null, threshold: [0.5] },
+    )
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>(":scope > div[id]"))) io.observe(el)
+    return () => io.disconnect()
+  }, [state, slug])
 
   // ── Handlers wired into the landing preview
   const handleCtaClick = React.useCallback(
@@ -295,7 +389,7 @@ export function PublishedPage({ slug }: { slug: string }) {
   // ── The published page itself
   const { name } = state.project
   return (
-    <div className="relative h-dvh overflow-y-auto bg-zinc-950 lf-scroll [scroll-behavior:smooth]">
+    <div data-lf-scroll-root className="relative h-dvh overflow-y-auto bg-zinc-950 lf-scroll [scroll-behavior:smooth]">
       <LandingPreview
         config={config!}
         abVariant={variant}
@@ -305,8 +399,37 @@ export function PublishedPage({ slug }: { slug: string }) {
         className="min-h-full"
       />
 
+      {/* Sticky mobile CTA — brand-colored quick action on phones. Appears
+          once the hero scrolls away; yields when the final CTA is in view. */}
+      {stickyCtaVisible && stickyCtaLabel && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 animate-[lf-fade-up_0.3s_ease-out] sm:hidden"
+          role="complementary"
+          aria-label="Quick action"
+        >
+          <div className="flex items-center gap-3 border-t border-zinc-700/50 bg-zinc-950/92 px-4 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] shadow-[0_-12px_32px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+            <span className="size-2 shrink-0 rounded-full" style={{ background: stickyAccent }} aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-zinc-200">{name}</span>
+            <button
+              type="button"
+              onClick={onStickyCtaClick}
+              className="flex h-9 shrink-0 items-center rounded-lg px-4 text-[12px] font-bold text-white shadow-lg transition-transform active:scale-95"
+              style={{ background: stickyAccent, boxShadow: `0 8px 22px -6px ${stickyAccent}66` }}
+              title={`Quick action — ${stickyCtaLabel}`}
+            >
+              {stickyCtaLabel}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Floating "published preview" chrome — live session telemetry */}
-      <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-3">
+      <div
+        className={cn(
+          "pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 transition-[padding] duration-300",
+          stickyCtaVisible ? "pb-16 sm:pb-3" : "pb-3",
+        )}
+      >
         <div
           className={cn(
             "pointer-events-none flex max-w-full flex-col items-center transition-all duration-300",

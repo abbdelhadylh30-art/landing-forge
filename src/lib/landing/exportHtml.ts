@@ -11,6 +11,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
 import { LandingPreview } from "@/components/forge/preview/LandingPreview"
+import { googleFontLinkTags } from "./themes"
 import type { LandingConfig } from "./types"
 
 function escapeHtml(s: string): string {
@@ -63,6 +64,8 @@ export async function buildStandaloneHtml(config: LandingConfig): Promise<Standa
   const description = escapeHtml(config.seo?.description ?? "")
   const brand = escapeHtml(config.brand.name)
   const year = new Date().getFullYear()
+  // ✦ Google webfont pairs: preconnect + css2 links (empty for system pairs)
+  const fontLinks = googleFontLinkTags(config.brand.font)
 
   const html = [
     "<!DOCTYPE html>",
@@ -75,6 +78,7 @@ export async function buildStandaloneHtml(config: LandingConfig): Promise<Standa
     '<meta property="og:title" content="' + title + '">',
     description ? '<meta property="og:description" content="' + description + '">' : "",
     '<meta name="generator" content="landing-forge studio">',
+    ...fontLinks,
     "<style>",
     css,
     "</style>",

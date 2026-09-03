@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
+import { ensureAllGoogleFonts } from "@/lib/landing/googleFonts"
 import { ACCENT_PRESETS, FONT_PAIRS, THEMES, accentVars, getTheme, isValidAccent } from "@/lib/landing/themes"
 import { SECTION_META } from "@/lib/landing/types"
 import type {
@@ -1146,27 +1147,28 @@ function SectionEditor({ section }: { section: Section }) {
 
 // ─── Brand kit (page tab) ─────────────────────────────────────────────────────
 
-/** Brand font-pair picker: curated display/body stacks with live "Ag" previews. */
+/** Brand font-pair picker: curated display/body stacks with live "Ag" previews.
+ *  System stacks render instantly offline; ✦ pairs stream brand-true webfonts
+ *  from Google Fonts (fallback stacks keep the page readable offline). */
 function FontPicker() {
   const font = useForge((s) => s.config.brand.font)
   const updateBrand = useForge((s) => s.updateBrand)
+  const activePair = FONT_PAIRS.find((p) => p.id === (font ?? "system"))
+
+  // stream every ✦ pair once so the tiles preview true faces
+  React.useEffect(() => {
+    ensureAllGoogleFonts()
+  }, [])
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Brand fonts</Label>
-        {font && (
-          <button
-            type="button"
-            className="ml-auto flex items-center gap-1 rounded-md border border-zinc-700 px-1.5 py-0.5 text-[9px] font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
-            onClick={() => updateBrand({ font: undefined })}
-            title="Back to the system default pair"
-          >
-            <Trash2 className="h-2.5 w-2.5" /> Reset
-          </button>
-        )}
+        <span className="ml-auto flex items-center gap-1 text-[9px] font-medium text-zinc-600" aria-hidden>
+          <span className="text-zinc-500">system</span> · <span className="text-violet-400">✦ webfont</span>
+        </span>
       </div>
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="grid grid-cols-4 gap-1.5">
         {FONT_PAIRS.map((p) => {
           const active = (font ?? "system") === p.id
           return (
@@ -1177,10 +1179,21 @@ function FontPicker() {
               title={`${p.label} — ${p.hint}`}
               onClick={() => updateBrand({ font: p.id === "system" ? undefined : p.id })}
               className={cn(
-                "group flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 transition-all hover:border-violet-500/60 hover:bg-violet-500/5",
+                "group relative flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 transition-all hover:border-violet-500/60 hover:bg-violet-500/5",
                 active ? "border-violet-500 bg-violet-500/10 ring-1 ring-violet-500/40" : "border-zinc-800 bg-zinc-900/40"
               )}
             >
+              {p.google && (
+                <span
+                  className={cn(
+                    "absolute right-1 top-1 text-[8px] leading-none",
+                    active ? "text-violet-300" : "text-zinc-600 group-hover:text-violet-400/70"
+                  )}
+                  aria-hidden
+                >
+                  ✦
+                </span>
+              )}
               <span
                 className={cn("text-[15px] leading-none", active ? "text-violet-200" : "text-zinc-300")}
                 style={{ fontFamily: p.display }}
@@ -1194,7 +1207,16 @@ function FontPicker() {
         })}
       </div>
       <p className="text-[10px] leading-tight text-zinc-500">
-        Display type for headlines, body stays readable. System stacks — no webfonts to load.
+        {activePair?.google ? (
+          <>
+            <span className="text-violet-300">✦ {activePair.label}</span> — webfonts stream from Google Fonts on the
+            preview, published page and export; a fallback system stack renders while they load or if the visitor is
+            offline.
+          </>
+        ) : (
+          <>Display type for headlines, body stays readable. System stacks need no webfont download; ✦ pairs add
+          brand-true Google type.</>
+        )}
       </p>
     </div>
   )

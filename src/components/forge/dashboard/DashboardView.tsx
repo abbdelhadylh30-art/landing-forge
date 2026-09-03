@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { BarChart3, Crown, Download, Globe2, Loader2, Mail, Monitor, MonitorSmartphone, MousePointerClick, Pause, Play, Radio, RefreshCw, Smartphone, Sparkles, Tablet, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
+import { BarChart3, Crown, Download, Globe2, Layers, Loader2, Mail, Monitor, MonitorSmartphone, MousePointerClick, Pause, Play, Radio, RefreshCw, Smartphone, Sparkles, Tablet, Timer, TrendingDown, TrendingUp, Users, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -260,21 +260,62 @@ function relTime(at: number): string {
 }
 
 /** "Latest activity" strip — the last few events, pushed live over the relay.
- *  Rows relating to an A/B test click through to that test's tab. */
-function LiveEventsPanel({ items, push, onJumpToTest }: { items: TickerItem[]; push: boolean; onJumpToTest?: (testKey: string) => void }) {
+ *  Rows relating to an A/B test click through to that test's tab.
+ *  Pause freezes the strip (new events buffer behind a "+N new" chip);
+ *  CSV export snapshots what is on screen. */
+function LiveEventsPanel({
+  items,
+  push,
+  onJumpToTest,
+  slug,
+}: {
+  items: TickerItem[]
+  push: boolean
+  onJumpToTest?: (testKey: string) => void
+  slug?: string
+}) {
   const [, force] = React.useReducer((x: number) => x + 1, 0)
   React.useEffect(() => {
     const t = setInterval(force, 5000) // relative timestamps drift slowly
     return () => clearInterval(t)
   }, [])
-  const shown = items.slice(0, 8)
+
+  // ── pause: freeze rows at the pause moment (pure derivation, no refs) ────
+  // events with at <= pausedAt are the frozen view; newer ones count behind
+  // the "+N new — resume" chip until the stream resumes.
+  const [pausedAt, setPausedAt] = React.useState<number | null>(null)
+  const paused = pausedAt !== null
+  const shown = paused ? items.filter((i) => i.at <= pausedAt!).slice(0, 8) : items.slice(0, 8)
+  const newCount = paused ? items.filter((i) => i.at > pausedAt!).length : 0
+
+  const exportCsv = () => {
+    const rows = [
+      ["time_iso", "time_local", "type", "label", "variant"],
+      ...shown.map((ev) => [
+        new Date(ev.at).toISOString(),
+        new Date(ev.at).toLocaleTimeString(),
+        ev.type,
+        ev.label,
+        ev.variant ?? "",
+      ]),
+    ]
+    const csv = rows.map((r) => r.map((f) => `"${String(f).replace(/"/g, '""')}"`).join(",")).join("\n")
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `landing-forge-live-events-${slug ?? "project"}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success("Live activity exported", { description: `${shown.length} events → CSV` })
+  }
+
   return (
     <div className="lf-fade-up rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4">
       <div className="mb-2.5 flex flex-wrap items-center gap-2">
         <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
-          <Radio className={cn("h-4 w-4", push ? "text-violet-300" : "text-zinc-500")} /> Latest activity
+          <Radio className={cn("h-4 w-4", push && !paused ? "text-violet-300" : "text-zinc-500")} /> Latest activity
         </h3>
-        {push && (
+        {push && !paused && (
           <span
             className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300"
             title="Events stream over WebSocket the instant they happen"
@@ -282,7 +323,39 @@ function LiveEventsPanel({ items, push, onJumpToTest }: { items: TickerItem[]; p
             live
           </span>
         )}
-        <span className="ml-auto text-[10px] text-zinc-600">CTA clicks · form submits · exposures · visits</span>
+        {paused && newCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setPausedAt(null)}
+            className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300 transition-colors hover:bg-amber-500/20"
+            title="New events arrived while paused — resume to see them"
+          >
+            +{newCount} new — resume
+          </button>
+        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="hidden text-[10px] text-zinc-600 sm:inline">CTA clicks · form submits · exposures · visits</span>
+          <button
+            type="button"
+            onClick={() => setPausedAt((p) => (p === null ? Date.now() : null))}
+            aria-pressed={paused}
+            title={paused ? "Resume the live stream" : "Pause the live stream to read without rows jumping"}
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-400 transition-colors hover:border-violet-500/50 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/50"
+          >
+            {paused ? <Play className="h-3 w-3" aria-hidden /> : <Pause className="h-3 w-3" aria-hidden />}
+            <span className="sr-only">{paused ? "Resume live activity" : "Pause live activity"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={shown.length === 0}
+            title="Export the visible activity strip as CSV"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-400 transition-colors hover:border-violet-500/50 hover:text-violet-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/50 disabled:opacity-40 disabled:hover:border-zinc-700 disabled:hover:text-zinc-400"
+          >
+            <Download className="h-3 w-3" aria-hidden />
+            <span className="sr-only">Export live activity as CSV</span>
+          </button>
+        </div>
       </div>
       {shown.length === 0 ? (
         <p className="py-2.5 text-center text-[11px] text-zinc-500">
@@ -460,9 +533,11 @@ export function DashboardView() {
 
   // ── Live events ticker: relay pushes land instantly; REST recentEvents
   // backfill the list on load (deduped by type+label+variant within 5s).
+  // section_view is excluded from the strip (high volume, low conversion
+  // signal — it feeds the Section performance panel instead).
   const [ticker, setTicker] = React.useState<TickerItem[]>([])
   React.useEffect(() => {
-    if (!relay.lastEvent) return
+    if (!relay.lastEvent || relay.lastEvent.type === "section_view") return
     const ev: TickerItem = {
       id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type: relay.lastEvent.type,
@@ -644,6 +719,9 @@ export function DashboardView() {
   const stats = data?.stats
   const hasData = (stats?.pageviews ?? 0) > 0
   const funnelMax = Math.max(1, ...(data?.funnel.map((f) => f.count) ?? [1]))
+  // visible (non-hidden) sections in the current config — context for the
+  // Section performance panel's "tracked" badge
+  const visibleSectionCount = sections.filter((s) => !s.hidden).length
   const abTests = data?.abTests ?? []
 
   return (
@@ -762,7 +840,7 @@ export function DashboardView() {
             <LiveVisitsPanel live={mergedLive ?? data!.live} liveEnabled={live} slug={slug} push={pushConnected} />
 
             {/* Live events ticker — relay-pushed activity stream; rows jump to their A/B test */}
-            <LiveEventsPanel items={ticker} push={pushConnected} onJumpToTest={jumpToAbTest} />
+            <LiveEventsPanel items={ticker} push={pushConnected} onJumpToTest={jumpToAbTest} slug={slug} />
 
             {/* Stat cards */}
             <div className="lf-fade-up-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -975,6 +1053,57 @@ export function DashboardView() {
                   )}
                 </PanelCard>
               </div>
+            </div>
+
+            {/* Section performance — which parts of the page actually get read */}
+            <div className="lf-fade-up" style={{ animationDelay: "600ms" }}>
+              <PanelCard
+                title="Section performance"
+                icon={Layers}
+                actions={
+                  <span className="rounded-full border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">
+                    {data!.topSections.length} of {visibleSectionCount} tracked
+                  </span>
+                }
+              >
+                {data!.topSections.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-6 text-center">
+                    <Layers className="h-6 w-6 text-zinc-700" />
+                    <p className="text-[12px] text-zinc-500">No section views yet.</p>
+                    <p className="max-w-xs text-[10px] leading-relaxed text-zinc-600">
+                      Open the published page (“Join live”) and scroll — every section that reaches half the viewport counts a view here.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="grid gap-1.5 sm:grid-cols-2">
+                    {data!.topSections.map((s, i) => {
+                      const pctViews = (s.count / Math.max(1, stats!.pageviews)) * 100
+                      const barPct = (s.count / Math.max(1, data!.topSections[0].count)) * 100
+                      return (
+                        <li key={s.name} className="flex items-center gap-2.5 rounded-lg border border-zinc-800/70 bg-zinc-900/50 px-2.5 py-1.5">
+                          <span className="w-5 shrink-0 text-center font-mono text-[10px] tabular-nums text-zinc-600" aria-hidden>
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-1 flex justify-between gap-2 text-[11px]">
+                              <span className="truncate text-zinc-300">{s.name}</span>
+                              <span className="shrink-0 font-mono tabular-nums text-zinc-500">
+                                {fmtNum(s.count)} · {Math.round(pctViews)}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-400 transition-all"
+                                style={{ width: `${Math.max(4, barPct)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </PanelCard>
             </div>
 
             {/* Leads inbox — contact form submissions */}

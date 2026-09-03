@@ -178,10 +178,23 @@ export function isValidAccent(hex: string | undefined): hex is string {
 }
 
 // ── Brand font pairs ─────────────────────────────────────────────────────────
-// Curated display/body pairs built from system stacks — zero network requests,
-// they render instantly everywhere (preview, published page, standalone export).
+// Two tiers:
+//  • system stacks — zero network requests, render instantly everywhere
+//    (preview, published page, standalone export);
+//  • Google webfont pairs (✦) — curated brand-true type streamed from
+//    fonts.googleapis.com with preconnects (see googleFonts.ts); the system
+//    stack stays as the in-font-family fallback so an offline environment
+//    degrades gracefully to the same metrics class.
 
-export type FontPairId = "system" | "editorial" | "mono" | "book" | "rounded"
+export type FontPairId =
+  | "system"
+  | "editorial"
+  | "mono"
+  | "book"
+  | "rounded"
+  | "g-sora"
+  | "g-playfair"
+  | "g-grotesk"
 
 export interface FontPairDef {
   id: FontPairId
@@ -191,6 +204,8 @@ export interface FontPairDef {
   display: string
   /** everything else — set as the root font-family (inherited) */
   body: string
+  /** Google webfont pair — css2 stylesheet URL (undefined for system stacks) */
+  google?: string
 }
 
 const SANS = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
@@ -198,12 +213,44 @@ const SERIF = "Georgia, 'Iowan Old Style', 'Times New Roman', serif"
 const MONO = "ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace"
 const ROUNDED = "'Trebuchet MS', 'Segoe UI', ui-rounded, system-ui, sans-serif"
 
+// webfont stacks — the web family first, then the equivalent system fallback
+const GF_SORA = "'Sora', " + SANS
+const GF_INTER = "'Inter', " + SANS
+const GF_PLAYFAIR = "'Playfair Display', " + SERIF
+const GF_SOURCE = "'Source Sans 3', " + SANS
+const GF_GROTESK = "'Space Grotesk', " + SANS
+const GF_DM = "'DM Sans', " + SANS
+
 export const FONT_PAIRS: FontPairDef[] = [
   { id: "system", label: "System", hint: "Neutral, platform-native — the default look", display: SANS, body: SANS },
   { id: "editorial", label: "Editorial", hint: "Serif headlines over sans body — magazine feel", display: SERIF, body: SANS },
   { id: "mono", label: "Mono", hint: "Monospaced headlines — developer-tool aesthetic", display: MONO, body: SANS },
   { id: "book", label: "Book", hint: "Serif throughout — calm, literary, long-form", display: SERIF, body: SERIF },
   { id: "rounded", label: "Rounded", hint: "Friendly display face — consumer apps", display: ROUNDED, body: SANS },
+  {
+    id: "g-sora",
+    label: "Sora",
+    hint: "Webfont — geometric Sora headlines over Inter body. Modern SaaS confidence.",
+    display: GF_SORA,
+    body: GF_INTER,
+    google: "https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap",
+  },
+  {
+    id: "g-playfair",
+    label: "Playfair",
+    hint: "Webfont — high-contrast Playfair Display over Source Sans 3. Boutique, editorial luxury.",
+    display: GF_PLAYFAIR,
+    body: GF_SOURCE,
+    google: "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@400;500;600&display=swap",
+  },
+  {
+    id: "g-grotesk",
+    label: "Grotesk",
+    hint: "Webfont — Space Grotesk headlines over DM Sans. Dev-tool, technical energy.",
+    display: GF_GROTESK,
+    body: GF_DM,
+    google: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=DM+Sans:wght@400;500;700&display=swap",
+  },
 ]
 
 export function getFontPair(id: string | undefined): FontPairDef {
@@ -212,6 +259,22 @@ export function getFontPair(id: string | undefined): FontPairDef {
 
 export function isFontPairId(v: string | undefined): v is FontPairId {
   return !!v && FONT_PAIRS.some((f) => f.id === v)
+}
+
+/** css2 URL when the pair is a Google webfont pair, else null. */
+export function googleFontHref(id: string | undefined): string | null {
+  return getFontPair(id).google ?? null
+}
+
+/** static <head> snippets for the standalone HTML export (preconnect + css2). */
+export function googleFontLinkTags(id: string | undefined): string[] {
+  const href = googleFontHref(id)
+  if (!href) return []
+  return [
+    '<link rel="preconnect" href="https://fonts.googleapis.com">',
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+    `<link rel="stylesheet" href="${href}">`,
+  ]
 }
 
 /**
