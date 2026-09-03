@@ -77,9 +77,9 @@ mini-services/analytics-live/   Bun + socket.io live relay (:3003) + ingest (:30
 prisma/schema.prisma   Project, PageView, Event, Deploy
 ```
 
-## 🔀 Relationship to `main`
+## 🙏 Credits
 
-`main` holds the CLI/YAML generator + docs. This branch is the **visual builder web app** — merge it if you want the studio in the mainline, or keep it as the app track.
+The concept and YAML config format come from [kasimmj/landing-forge](https://github.com/kasimmj/landing-forge) — this repo is the visual builder web app implementation of that vision.
 
 ---
 
