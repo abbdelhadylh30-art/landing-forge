@@ -722,3 +722,46 @@ Stage Summary:
 - User's two complaints resolved: (1) project now lives in THEIR GitHub (abbdelhadylh30-art/landing-forge, main branch, clean history, no secrets/db in tracking); (2) "not clickable" root cause was environment RAM exhaustion (stale QA browsers + dev-server restart) — memory reclaimed, and the app now self-heals: ConnectionGuard reloads the page when the server returns, and error boundaries replace white screens.
 - Actionable follow-up for future QA rounds: ALWAYS `agent-browser close` (and pkill stale daemons if >1 running) at the START of QA on this 4GB box.
 - Remaining known risk: Turbopack dev server memory (~1.7GB RSS) on 4GB box is tight with a browser open — production build would halve it; acceptable in sandbox.
+
+---
+Task ID: R14
+Agent: main (Z.ai Code)
+Task: Round 14 — QA triage (stable) + carried priorities: Google Fonts depth, section analytics, ticker controls, sticky mobile CTA
+
+Work Log:
+- QA baseline (fresh browser after pkill, gateway :81): 0 page/console errors across studio/analytics/projects/published; relay healthy. No bugs → feature work per R12 handover + gaps audit.
+- DISCOVERY: audit of the R12 "next-phase priorities" found several already implemented (likely mid-R13 cron rounds): readiness A/B growth suggestions (SUGGEST_META + UI verified), PageView.variantMap per-test engagement (schema + track + aggregation + dashboard bars), ticker click-through to A/B tabs, template gallery in ProjectsView. Remaining genuine gaps became this round's scope.
+- NEW FEATURE — GOOGLE WEBFONT PAIRS (✦, fonts-depth priority carried from R11):
+  - themes.ts: FontPairDef gains optional `google` (css2 URL). 3 curated pairs — g-sora (Sora+Inter), g-playfair (Playfair Display+Source Sans 3), g-grotesk (Space Grotesk+DM Sans) — every stack keeps its system fallback (offline-safe degradation). Helpers googleFontHref() + googleFontLinkTags(). YAML round-trip: isFontPairId already validates the new ids.
+  - NEW src/lib/landing/googleFonts.ts: useGoogleFonts(font) singleton loader (preconnects for apis/gstatic with crossorigin; one css2 link whose href swaps on pair change; nothing removed on unmount — preview/published/dialogs share tags) + ensureAllGoogleFonts() for the picker tiles.
+  - LandingPreview mounts the hook (single mount covers studio preview AND published page). exportHtml.ts injects preconnect+css2 links into the standalone HTML head.
+  - FontPicker redesigned: grid-cols-4 (2 rows of 4 pairs), ✦ badge on webfont tiles, "system · ✦ webfont" legend, contextual hint that swaps to a per-pair explanation when a webfont is active, live true-face "Ag" previews (all pairs' stylesheets streamed on mount).
+  - VERIFIED: switching pairs injects/updates the head links (6 tags observed); document.fonts shows Sora 800/Inter/Playfair/Space Grotesk LOADED; VLM confirms visible geometric-vs-serif typography change; autosave persists brand.font (Bean Route demo now on g-playfair — suits the coffee brand); googleFontLinkTags() unit-checked via bun.
+- NEW FEATURE — STICKY MOBILE CTA (published pages):
+  - Mobile-only (sm:hidden) brand-accent bar: brand dot + name + hero CTA label button. Appears after 600px of scroll; YIELDS when the final CTA section is ≥50% in view (IntersectionObserver on the "cta" anchor); click = handleCtaClick (variant-attributed "hero: <label> (sticky)" cta_click — VERIFIED in DB) + smooth-scroll to the hero CTA href target (#pricing reached).
+  - Scroll listener rides the REAL scroll container: the published page scrolls inside div[data-lf-scroll-root] (h-dvh overflow-y-auto), window.scrollY never moves — root div got the data attribute, listener attached to it (+window fallback).
+  - Chrome collision handled: telemetry pill raises (pb-16 sm:pb-3) while the bar is visible; verified no overlap (bar 787–844px, pill 708–754px, overlap:false).
+  - BUG FIX (pre-existing, found during testing): the chrome's full-width fixed wrapper (z-50) blocked ALL clicks in the bottom strip — it intercepted clicks on anything beneath, including the new CTA bar. Now pointer-events-none (inner pill keeps pointer-events-auto).
+- NEW FEATURE — SECTION PERFORMANCE ANALYTICS:
+  - PublishedPage: IntersectionObserver (threshold 0.5) over each rendered section (div[id] children of the preview root, mapped via sectionAnchors reverse-lookup). Fires ONE section_view event per LABEL per visit (label = SECTION_META[type].label — the same convention the traffic seeder uses; two Features instances count once). VERIFIED: Hero/Features/Testimonials/Pricing/FAQ/Contact/Final CTA/Footer events in the DB from live scrolling.
+  - DashboardView: NEW "Section performance" panel (full-width, 2-col rows): rank, label, gradient reach bar (relative to #1), count + % of pageviews, "N of M tracked" badge (M = visible sections in the current config). topSections was computed in the analytics payload all along but never rendered.
+  - Ticker noise control: section_view events are excluded from the live events strip (high volume, low conversion signal) — they feed the panel instead.
+- NEW FEATURE — LIVE TICKER CONTROLS:
+  - Pause/resume button: freezes rows AT THE PAUSE MOMENT via pausedAt timestamp (pure derivation — items.filter(at <= pausedAt), no refs, lint-safe); events arriving while paused buffer behind an amber "+N new — resume" chip that unfreezes on click.
+  - CSV export button: snapshots the visible strip (time_iso, time_local, type, label, variant) — blob download, slug-dated filename, toast confirmation. VERIFIED: "Live activity exported, 8 events → CSV".
+- Styling (mandatory): font picker redesign, ticker header controls, section-performance card, sticky CTA bar w/ safe-area padding + active:scale feedback.
+- Verification: lint 0/0; tsc app-code clean; fresh sessions 0 console/page errors; mobile 390px no horizontal overflow (dashboard + published); pause/resume + CSV + sticky click + section tracking all E2E-verified through :81; memory guarded (browser closed after QA, ~1.6GB available).
+- Committed (0d3a638) + pushed to abbdelhadylh30-art/landing-forge main.
+
+Stage Summary:
+- All four long-carried priorities are now closed: fonts depth (this round), per-test variant storage (found done), A/B readiness suggestions (found done), ticker depth (pause/CSV this round, click-through found done).
+- Two genuinely new capabilities shipped: real section-view analytics (observer → events → dashboard panel) and a conversion-focused sticky mobile CTA.
+- One real pre-existing bug fixed: the published-page chrome wrapper swallowed clicks across the whole bottom strip.
+- QA screenshots: download/qa-r14-fonts-sora.png, qa-r14-fonts-playfair.png, qa-r14-section-perf*.png, qa-r14-sticky-*.png.
+
+Next-phase priorities:
+1. Hero section_view: the seeder excludes hero from sectionLabels (funnel already counts "Visited page"); consider whether the live hero event adds signal or noise to the panel (currently it shows up live but not in seeded data — slight asymmetry).
+2. Sticky CTA configurability: a per-hero toggle ("sticky mobile CTA: on/off") — some pages want it, some don't.
+3. Publish-state preview: the studio preview has no visual indicator that Bean Route's brand font (g-playfair) is ACTIVE on the published page vs system default — minor UX clarity idea (badge on the font picker tile: "live").
+4. Per-variant section_view breakdown: variantMap exists — section_views could be tagged with variants to show "Pricing A: 300 reads vs B: 380" (attribution plumbing exists in the track route already).
+5. Smaller: mobile toolbar compaction on very small phones (carried), logo/brand consistency readiness check (carried).
