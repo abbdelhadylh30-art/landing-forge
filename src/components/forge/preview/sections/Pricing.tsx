@@ -106,11 +106,14 @@ function PlanCard({ plan, annual, onCtaClick }: PlanCardProps) {
       </ul>
 
       <div className="mt-auto pt-7">
-        <button
-          type="button"
-          onClick={() => onCtaClick?.(label, plan.name)}
+        <a
+          href="#cta"
+          onClick={(e) => {
+            if (onCtaClick) e.preventDefault()
+            onCtaClick?.(label, plan.name)
+          }}
           className={cn(
-            "w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
+            "block w-full rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition-colors",
             !highlighted && "border hover:[border-color:var(--lf-accent)]"
           )}
           style={
@@ -120,7 +123,7 @@ function PlanCard({ plan, annual, onCtaClick }: PlanCardProps) {
           }
         >
           {label}
-        </button>
+        </a>
       </div>
     </div>
   )

@@ -10,6 +10,7 @@ import { track, pingEngagement, detectDevice, detectBrowser, getVisitorId } from
 import { useVisitorRelay } from "@/components/forge/shared/livesocket"
 import { getAbTests, assignAbVariants, sectionAb } from "@/lib/landing/ab"
 import { sectionAnchors } from "@/lib/landing/anchors"
+import { ctaHrefFor, runCtaNavigation } from "@/lib/landing/ctaNav"
 import { getTheme } from "@/lib/landing/themes"
 import { SECTION_META } from "@/lib/landing/types"
 import type { LandingConfig, ProjectSummary, ProjectWithConfig, Section } from "@/lib/landing/types"
@@ -321,7 +322,10 @@ export function PublishedPage({ slug }: { slug: string }) {
         variant: tagged ?? undefined,
         path: `/${slug}`,
       })
-      toast.success("CTA click tracked 🎯", { description: label })
+      // perform the CTA's action: smooth-scroll to its target (or open an
+      // external link) — a click the visitor can SEE, not just a tracked event
+      const nav = runCtaNavigation(section, ctaHrefFor(section, label))
+      toast.success("CTA click tracked 🎯", { description: nav ? `${label} → ${nav}` : label })
     },
     [projectId, variant, variantMap, slug, relay.heartbeat]
   )

@@ -212,23 +212,29 @@ export function Hero({ section, brandName, abOverride, onCtaClick }: HeroProps) 
               <h1 className="mt-4 text-3xl font-extrabold leading-[1.08] tracking-tight sm:text-4xl md:text-5xl">{headline}</h1>
               {sub ? <p className="mt-4 max-w-xl text-base leading-relaxed opacity-85 md:text-lg">{sub}</p> : null}
               <div className="mt-8 flex flex-wrap justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => onCtaClick?.(ctaLabel)}
+                <a
+                  href={section.cta.href || "#cta"}
+                  onClick={(e) => {
+                    if (onCtaClick) e.preventDefault()
+                    onCtaClick?.(ctaLabel)
+                  }}
                   className="rounded-xl px-6 py-3 text-sm font-semibold transition-transform duration-150 hover:scale-[1.02] active:scale-100 md:text-base"
                   style={{ background: "var(--lf-accent-contrast)", color: "var(--lf-accent)", boxShadow: "0 18px 40px -20px rgba(0,0,0,0.45)" }}
                 >
                   {ctaLabel}
-                </button>
+                </a>
                 {secondaryCta?.label ? (
-                  <button
-                    type="button"
-                    onClick={() => onCtaClick?.(secondaryCta.label)}
+                  <a
+                    href={secondaryCta.href || "#cta"}
+                    onClick={(e) => {
+                      if (onCtaClick) e.preventDefault()
+                      onCtaClick?.(secondaryCta.label)
+                    }}
                     className="rounded-xl px-6 py-3 text-sm font-semibold transition-transform duration-150 hover:scale-[1.02] active:scale-100 md:text-base"
                     style={{ background: "rgba(255,255,255,0.16)" }}
                   >
                     {secondaryCta.label}
-                  </button>
+                  </a>
                 ) : null}
               </div>
               <StatsRow stats={stats} onPanel center />
@@ -271,9 +277,12 @@ export function Hero({ section, brandName, abOverride, onCtaClick }: HeroProps) 
         </p>
       ) : null}
       <div className={cn("mt-8 flex flex-wrap gap-3", centered && "justify-center")}>
-        <button
-          type="button"
-          onClick={() => onCtaClick?.(ctaLabel)}
+        <a
+          href={section.cta.href || "#cta"}
+          onClick={(e) => {
+            if (onCtaClick) e.preventDefault()
+            onCtaClick?.(ctaLabel)
+          }}
           className="rounded-xl px-6 py-3 text-sm font-semibold transition-transform duration-150 hover:scale-[1.02] active:scale-100 md:text-base"
           style={{
             background: "var(--lf-accent)",
@@ -282,16 +291,19 @@ export function Hero({ section, brandName, abOverride, onCtaClick }: HeroProps) 
           }}
         >
           {ctaLabel}
-        </button>
+        </a>
         {secondaryCta?.label ? (
-          <button
-            type="button"
-            onClick={() => onCtaClick?.(secondaryCta.label)}
+          <a
+            href={secondaryCta.href || "#cta"}
+            onClick={(e) => {
+              if (onCtaClick) e.preventDefault()
+              onCtaClick?.(secondaryCta.label)
+            }}
             className="rounded-xl border px-6 py-3 text-sm font-semibold transition-colors hover:[background:var(--lf-accent-soft)] md:text-base"
             style={{ borderColor: "var(--lf-border)", color: "var(--lf-text)", background: "transparent" }}
           >
             {secondaryCta.label}
-          </button>
+          </a>
         ) : null}
       </div>
       <StatsRow stats={stats} center={centered} />

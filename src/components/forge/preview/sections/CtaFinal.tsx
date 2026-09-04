@@ -10,6 +10,12 @@ export interface CtaFinalProps {
 }
 
 export function CtaFinal({ section, onCtaClick }: CtaFinalProps) {
+  // the final CTA is the funnel's end — when its href targets itself (the
+  // demo default) or is empty, loop the reader back to the hero (#top) so the
+  // button visibly DOES something, in the app AND in the static HTML export
+  const raw = section.cta.href?.trim() ?? ""
+  const selfAnchor = `#${(section.anchor?.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "cta")}`
+  const ctaHref = raw && raw !== selfAnchor ? raw : "#top"
   return (
     <section className={SECTION_PAD}>
       <div className={CONTAINER}>
@@ -36,9 +42,12 @@ export function CtaFinal({ section, onCtaClick }: CtaFinalProps) {
             {section.sub ? (
               <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed opacity-80 md:text-base">{section.sub}</p>
             ) : null}
-            <button
-              type="button"
-              onClick={() => onCtaClick?.(section.cta.label)}
+            <a
+              href={ctaHref}
+              onClick={(e) => {
+                if (onCtaClick) e.preventDefault()
+                onCtaClick?.(section.cta.label)
+              }}
               className="mt-8 rounded-xl px-6 py-3 text-sm font-semibold transition-transform duration-150 hover:scale-[1.02] active:scale-100 md:text-base"
               style={{
                 background: "var(--lf-accent-contrast)",
@@ -47,7 +56,7 @@ export function CtaFinal({ section, onCtaClick }: CtaFinalProps) {
               }}
             >
               {section.cta.label}
-            </button>
+            </a>
             {section.note ? <p className="mt-4 text-xs opacity-70 md:text-sm">{section.note}</p> : null}
           </div>
         </div>

@@ -66,14 +66,17 @@ export function Navbar({ section, brandName, logoUrl, onCtaClick }: NavbarProps)
 
         <div className="flex items-center gap-2">
           {cta?.label ? (
-            <button
-              type="button"
-              onClick={() => onCtaClick?.(cta.label)}
+            <a
+              href={cta.href || "#cta"}
+              onClick={(e) => {
+                if (onCtaClick) e.preventDefault()
+                onCtaClick?.(cta.label)
+              }}
               className="hidden rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-transform duration-150 hover:scale-[1.02] active:scale-100 sm:inline-flex"
               style={{ background: "var(--lf-accent)", color: "var(--lf-accent-contrast)" }}
             >
               {cta.label}
-            </button>
+            </a>
           ) : null}
           <button
             type="button"
@@ -103,17 +106,18 @@ export function Navbar({ section, brandName, logoUrl, onCtaClick }: NavbarProps)
               </a>
             ))}
             {cta?.label ? (
-              <button
-                type="button"
-                onClick={() => {
+              <a
+                href={cta.href || "#cta"}
+                onClick={(e) => {
                   setOpen(false)
+                  if (onCtaClick) e.preventDefault()
                   onCtaClick?.(cta.label)
                 }}
                 className="mt-2 rounded-lg px-3.5 py-2 text-sm font-semibold"
                 style={{ background: "var(--lf-accent)", color: "var(--lf-accent-contrast)" }}
               >
                 {cta.label}
-              </button>
+              </a>
             ) : null}
           </div>
         </div>

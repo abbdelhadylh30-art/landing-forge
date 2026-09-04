@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useForge } from "@/lib/landing/store"
 import { getAbTests, abTestLabel } from "@/lib/landing/ab"
+import { ctaHrefFor, runCtaNavigation } from "@/lib/landing/ctaNav"
 import { LandingPreview } from "@/components/forge/preview/LandingPreview"
 import { track, detectDevice, detectBrowser } from "@/components/forge/shared/tracking"
 import type { Section } from "@/lib/landing/types"
@@ -90,7 +91,10 @@ export function DevicePreview({ className }: { className?: string }) {
       label: `${section.type}: ${label}`,
       variant: ownVariant ?? primaryVariant ?? undefined,
     })
-    toast.success("CTA click tracked 🎯", { description: label })
+    // act like a real visitor click: scroll the preview to the CTA's target
+    // (or open an external link) so the button visibly DOES something
+    const nav = runCtaNavigation(section, ctaHrefFor(section, label))
+    toast.success("CTA click tracked 🎯", { description: nav ? `${label} → ${nav}` : label })
   }
 
   const handleFormSubmit = (section: Section, data: Record<string, string>) => {
