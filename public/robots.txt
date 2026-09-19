@@ -12,3 +12,5 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+Sitemap: https://landing.abdelhadygabriel.me/sitemap.xml
