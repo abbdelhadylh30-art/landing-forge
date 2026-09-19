@@ -14,6 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://landing.abdelhadygabriel.me"),
+  alternates: { canonical: "/" },
   title: "landing-forge studio — build landing pages visually",
   description:
     "Generate beautiful landing pages from one YAML file or an AI prompt. Visual builder, A/B testing, privacy-friendly analytics, one-click deploy.",
