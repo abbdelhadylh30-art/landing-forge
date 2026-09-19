@@ -29,6 +29,13 @@ export const metadata: Metadata = {
       "Beautiful landing pages from one YAML file or AI prompt. Built-in analytics, A/B testing, SEO.",
     siteName: "landing-forge",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "landing-forge studio — build landing pages visually" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "landing-forge studio — build landing pages visually",
+    description: "Beautiful landing pages from one YAML file or AI prompt. Built-in analytics, A/B testing, SEO.",
+    images: ["/og.png"],
   },
 };
 
